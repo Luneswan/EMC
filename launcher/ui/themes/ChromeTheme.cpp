@@ -86,8 +86,12 @@ QString ChromeTheme::appStyleSheet()
     //  - controls are "brushed metal": a top-lit vertical gradient with a bright top edge
     //  - the one primary action per view is solid white with black text
     //  - 8px corners on controls, 10px on containers; nothing pill-shaped but the toggles
-    return QStringLiteral(R"(
-QWidget { font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif; }
+#ifdef Q_OS_WIN
+    const QString font = QStringLiteral(R"(QWidget { font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif; })");
+#else
+    const QString font;  // the system's own UI font: San Francisco on macOS, the desktop's choice on Linux
+#endif
+    return font + QStringLiteral(R"(
 
 QToolTip { color: #F5F5F7; background-color: #242427; border: 1px solid rgba(255,255,255,0.10); padding: 5px 8px; border-radius: 6px; }
 

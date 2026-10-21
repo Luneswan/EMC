@@ -105,6 +105,7 @@
 #include <QStringLiteral>
 #include <QStyleFactory>
 #include <QTranslator>
+#include <QSystemTrayIcon>
 #include <QWindow>
 #include <utility>
 
@@ -1426,7 +1427,7 @@ void Application::performMainStartupAction()
     }
     // Servers set to start with EMC come up now, window or not.
     m_servers->startAutoStartServers();
-    if (m_startInTray && m_serverTray) {
+    if (m_startInTray && m_serverTray && QSystemTrayIcon::isSystemTrayAvailable()) {
         m_serverTray->enterBackground(false);
         qDebug() << "<> Started in the tray.";
     } else if (!m_mainWindow) {

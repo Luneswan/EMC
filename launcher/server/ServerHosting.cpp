@@ -97,8 +97,11 @@ void open(ServerInstance* server, const QString& mode)
             }
             guard->settings()->set("PublicAddress", ip);
             if (RouterCheck::isPrivate(ip)) {
-                guard->logLine(QObject::tr("Your internet provider shares one public address between many homes, so port "
-                                           "forwarding cannot work here. Use playit.gg in the Network page instead."),
+                guard->logLine(PlayitAgent::supported()
+                                   ? QObject::tr("Your internet provider shares one public address between many homes, so port "
+                                                 "forwarding cannot work here. Use playit.gg in the Network page instead.")
+                                   : QObject::tr("Your internet provider shares one public address between many homes, so port "
+                                                 "forwarding cannot work here. Friends on your Wi-Fi can still join."),
                                MessageLevel::Warning);
             } else {
                 updateDuckDns(guard, ip);
@@ -107,6 +110,12 @@ void open(ServerInstance* server, const QString& mode)
             emit guard->changed();
         });
     } else if (mode == "playit") {
+        // A server set up on another computer may ask for playit where it has no agent (macOS).
+        if (!PlayitAgent::supported()) {
+            server->logLine(QObject::tr("playit.gg has no version for this computer, so only friends on your Wi-Fi can join."),
+                            MessageLevel::Warning);
+            return;
+        }
         auto* agent = PlayitAgent::instance();
         agent->setServerActive(server, true);
         agent->prepare(server, [guard](const QString& error) {
@@ -129,7 +138,7 @@ void close(ServerInstance* server, const QString& mode)
         for (const auto& forward : forwards(server)) {
             PortMapper::instance()->removeMapping(forward.port, forward.protocol, [](const QString&) {});
         }
-    } else if (mode == "playit") {
+    } else if (mode == "playit" && PlayitAgent::supported()) {
         PlayitAgent::instance()->setServerActive(server, false);
     }
 }

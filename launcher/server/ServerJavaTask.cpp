@@ -18,6 +18,8 @@
 #include "java/JavaMetadata.h"
 #include "java/download/ArchiveDownloadTask.h"
 #include "java/download/ManifestDownloadTask.h"
+#include "java/download/SymlinkTask.h"
+#include "tasks/SequentialTask.h"
 #include "meta/Index.h"
 #include "meta/Version.h"
 #include "meta/VersionList.h"
@@ -70,19 +72,34 @@ void ServerJavaTask::downloadFrom(const QString& metaVersion)
         return;
     }
     const QString arch = SysInfo::getSupportedJavaArchitecture();
+    // Mojang's runtime by its exact name, else any build of this Java version for this computer
+    // (Mojang publishes some only under other names on ARM Linux and Apple Silicon).
+    Java::MetadataPtr pick;
     for (const auto& java : version->data()->runtimes) {
-        if (java->runtimeOS != arch || java->name() != m_javaName) {
-            continue;
+        if (java->runtimeOS == arch && (java->name() == m_javaName || !pick)) {
+            pick = java;
         }
-        const QString finalPath = QDir(APPLICATION->javaPath()).absoluteFilePath(java->m_name);
+    }
+    if (pick) {
+        const auto& java = pick;
+        // Saved under the name the server asks for, so later starts find it.
+        const QString finalPath = QDir(APPLICATION->javaPath()).absoluteFilePath(m_javaName.isEmpty() ? java->m_name : m_javaName);
         Task::Ptr task;
         if (java->downloadType == Java::DownloadType::Manifest) {
             task = makeShared<Java::ManifestDownloadTask>(java->url, finalPath, java->checksumType, java->checksumHash);
         } else if (java->downloadType == Java::DownloadType::Archive) {
             task = makeShared<Java::ArchiveDownloadTask>(java->url, finalPath, java->checksumType, java->checksumHash);
         } else {
-            break;
+            emitFailed(tr("No Java %1 build was found for %2.").arg(m_major).arg(arch));
+            return;
         }
+#ifdef Q_OS_MACOS
+        // macOS runtimes keep java under Contents/Home; link bin/ next to it, as the game's Java does.
+        auto seq = makeShared<SequentialTask>(tr("Install Java"));
+        seq->addTask(task);
+        seq->addTask(makeShared<Java::SymlinkTask>(finalPath));
+        task = seq;
+#endif
         setStatus(tr("Downloading Java %1").arg(m_major));
         runSubTask(task, [this] {
             m_path = installedJava(m_javaName);

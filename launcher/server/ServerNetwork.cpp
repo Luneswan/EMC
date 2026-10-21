@@ -19,6 +19,10 @@
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
 // clang-format on
+#else
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 QString ServerNetwork::lanAddress()
@@ -97,15 +101,25 @@ bool ServerNetwork::portAvailable(int port, bool udp)
 #ifdef Q_OS_WIN
     return !boundPorts(udp).contains(port);
 #else
-    // Probe loopback only: a listening socket on a public address would make some firewalls ask
-    // about EMC. Without SO_REUSEADDR this still fails when another program holds *:port.
-    const QHostAddress address(QHostAddress::LocalHost);
-    if (udp) {
-        QUdpSocket socket;
-        return socket.bind(address, quint16(port), QAbstractSocket::DontShareAddress);
+    // Bind the wildcard address without listening (no firewall prompt). Qt binds loopback with
+    // SO_REUSEADDR, which on macOS succeeds even while another program listens on *:port. TCP keeps
+    // SO_REUSEADDR so a port left in TIME_WAIT by the last run still counts as free; a wildcard
+    // bind with it fails all the same while another socket is listening on *:port.
+    const int fd = ::socket(AF_INET, udp ? SOCK_DGRAM : SOCK_STREAM, 0);
+    if (fd < 0) {
+        return true;  // cannot tell; let the server try
     }
-    QTcpServer server;
-    return server.listen(address, quint16(port));
+    if (!udp) {
+        const int on = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    }
+    sockaddr_in address {};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_port = htons(quint16(port));
+    const bool free = ::bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0;
+    ::close(fd);
+    return free;
 #endif
 }
 

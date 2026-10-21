@@ -46,11 +46,11 @@ namespace {
 
 const QString ledgerName = "imported-launchers.json";
 
-// Paths are compared as Windows compares them.
+// Paths are compared as the system compares them: Windows and (usually) macOS ignore case.
 QString key(const QString& path)
 {
     const QString clean = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     return clean.toLower();
 #else
     return clean;
@@ -127,7 +127,9 @@ void writeLedger(const QString& dataDir, const QSet<QString>& ledger)
     QStringList list(ledger.begin(), ledger.end());
     list.sort();
     QJsonObject root{ { "imported", QJsonArray::fromStringList(list) } };
-    FS::write(FS::PathCombine(dataDir, ledgerName), QJsonDocument(root).toJson());
+    if (auto written = FS::write(FS::PathCombine(dataDir, ledgerName), QJsonDocument(root).toJson()); !written) {
+        qWarning() << "Could not save the import ledger:" << written.error();
+    }
 }
 
 QString emcInstancesDir()
@@ -172,7 +174,9 @@ void repointJava(const QString& instanceDir, const QString& oldData, const QStri
         }
     }
     if (changed) {
-        FS::write(cfgPath, lines.join('\n').toUtf8());
+        if (auto written = FS::write(cfgPath, lines.join('\n').toUtf8()); !written) {
+            qWarning() << "Could not update the Java path in" << cfgPath << ":" << written.error();
+        }
     }
 }
 
@@ -327,11 +331,17 @@ QList<LauncherImport::Source> LauncherImport::detect()
         consider(QDir(home).absoluteFilePath(name));
     }
 
+#ifdef Q_OS_MACOS
+    // macOS asks the user before an app reads Desktop, Documents or Downloads, so the automatic
+    // search stays in the launchers' own data folders; "Import from..." covers anything else.
+    QStringList roots;
+#else
     // Portable copies are unpacked where people put downloads: look two folders deep.
     QStringList roots = { QStandardPaths::writableLocation(QStandardPaths::DesktopLocation),
                           QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
                           QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation), home,
                           QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Programs" };
+#endif
 #ifdef Q_OS_WIN
     // Other drives too (D:\Games...). On macOS and Linux portable copies live under the home folder.
     for (const auto& volume : QStorageInfo::mountedVolumes()) {

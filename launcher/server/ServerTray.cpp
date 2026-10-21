@@ -125,6 +125,11 @@ void ServerTray::rebuildMenu()
 
 void ServerTray::mainWindowClosed()
 {
+    // Without a tray there would be no way back to a hidden EMC, so closing quits (servers stop cleanly).
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+        m_inBackground = false;
+        return;
+    }
     if (m_inBackground || m_servers->runningCount() > 0) {
         enterBackground(!m_inBackground);
     }
@@ -227,10 +232,16 @@ void ServerTray::setStartWithWindows(bool on)
     QDir().mkpath(QFileInfo(path).absolutePath());
     QFile file(path);
     if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        auto quote = [](QString text) { return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; };
+        // Desktop Entry quoting: escape \ " ` $ inside the quotes, then double every \ and %.
+        auto quote = [](QString text) {
+            text.replace("\\", "\\\\").replace("\"", "\\\"").replace("`", "\\`").replace("$", "\\$");
+            return "\"" + text.replace("\\", "\\\\").replace("%", "%%") + "\"";
+        };
+        // Without FUSE the AppImage runs by unpacking itself; keep that for the login start too.
+        const QString env = qEnvironmentVariableIsSet("APPIMAGE_EXTRACT_AND_RUN") ? "env APPIMAGE_EXTRACT_AND_RUN=1 " : "";
         file.write(QString("[Desktop Entry]\nType=Application\nName=EMC\nComment=Start EMC in the tray\n"
-                           "Exec=%1 --tray --dir %2\nIcon=io.github.luneswan.EMC\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
-                       .arg(quote(startProgram()), quote(data))
+                           "Exec=%1%2 --tray --dir %3\nIcon=io.github.luneswan.EMC\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
+                       .arg(env, quote(startProgram()), quote(data))
                        .toUtf8());
     }
 #endif

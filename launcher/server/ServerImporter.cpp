@@ -98,19 +98,25 @@ QString ServerImporter::mcForNeoForge(const QString& neoForgeVersion)
 
 bool ServerImporter::readRunScript(const QString& dir, QStringList* args)
 {
-    const QString text = readText(FS::PathCombine(dir, "run.bat"));
-    for (QString line : text.split('\n')) {
-        line = line.trimmed();
-        if (!line.startsWith("java ")) {
-            continue;
+    // The installer writes both scripts; a folder from elsewhere may have only one.
+    for (const auto* script : { "run.bat", "run.sh" }) {
+        const QString text = readText(FS::PathCombine(dir, script));
+        for (QString line : text.split('\n')) {
+            line = line.trimmed();
+            if (!line.startsWith("java ")) {
+                continue;
+            }
+            QStringList parts = QProcess::splitCommand(line);
+            parts.removeFirst();
+            parts.removeAll("@user_jvm_args.txt");
+            parts.removeAll("%*");
+            parts.removeAll("$@");
+            parts.removeAll("nogui");
+            if (!parts.isEmpty()) {
+                *args = parts;
+                return true;
+            }
         }
-        QStringList parts = QProcess::splitCommand(line);
-        parts.removeFirst();
-        parts.removeAll("@user_jvm_args.txt");
-        parts.removeAll("%*");
-        parts.removeAll("nogui");
-        *args = parts;
-        return !parts.isEmpty();
     }
     return false;
 }

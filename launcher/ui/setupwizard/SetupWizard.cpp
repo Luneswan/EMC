@@ -9,6 +9,7 @@
 
 #include <BuildConfig.h>
 #include <QAbstractButton>
+#include <QFontMetrics>
 
 SetupWizard::SetupWizard(QWidget* parent) : QWizard(parent)
 {
@@ -34,6 +35,15 @@ void SetupWizard::retranslate()
     setButtonText(QWizard::FinishButton, tr("Get Started"));
     setButtonText(QWizard::CustomButton1, tr("Refresh"));
     setWindowTitle(tr("Welcome to %1").arg(BuildConfig.LAUNCHER_DISPLAYNAME));
+
+    // The default button turns bold (theme) after Qt has sized it, so leave room for bold text.
+    for (const auto which : { QWizard::NextButton, QWizard::BackButton, QWizard::FinishButton, QWizard::CustomButton1 }) {
+        if (auto* b = button(which)) {
+            QFont bold = b->font();
+            bold.setWeight(QFont::DemiBold);
+            b->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(b->text()) + 2 * 16 + 2 + 8);
+        }
+    }
 }
 
 BaseWizardPage* SetupWizard::getBasePage(int id)

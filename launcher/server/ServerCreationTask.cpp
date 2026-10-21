@@ -381,7 +381,7 @@ void ServerCreationTask::installBedrock()
         }
         if (url.isEmpty()) {
             emitFailed(ServerSoftware::bedrockSupported() ? tr("Mojang's Bedrock server download could not be found.")
-                                                          : tr("Mojang makes the Bedrock server for Windows and Linux only."));
+                                                          : tr("Mojang makes the Bedrock server only for Windows and for Linux on Intel/AMD computers."));
             return;
         }
         static const QRegularExpression version("bedrock-server-([0-9.]+)\\.zip");

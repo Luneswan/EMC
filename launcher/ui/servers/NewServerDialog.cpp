@@ -148,7 +148,7 @@ QWidget* NewServerDialog::buildEditionStep()
     for (const auto& choice : choices) {
         const bool unavailable = choice.edition == Edition::Bedrock && !ServerSoftware::bedrockSupported();
         auto* card = new OptionCard(choice.title,
-                                    unavailable ? tr("Mojang makes the Bedrock server for Windows and Linux only. Pick \"Java and Bedrock "
+                                    unavailable ? tr("Mojang makes the Bedrock server only for Windows and for Linux on Intel/AMD computers. Pick \"Java and Bedrock "
                                                      "together\" to let Bedrock players join from this computer.")
                                                 : choice.description,
                                     w);

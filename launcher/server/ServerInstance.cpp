@@ -338,8 +338,22 @@ QStringList ServerInstance::buildArguments(const QString& java, QString* program
         args << QProcess::splitCommand(extra);
     }
     if (type == "args") {
-        // A loader's own argument list (Forge/NeoForge run.bat), one argument per line.
-        args << target.split('\n', Qt::SkipEmptyParts);
+        // A loader's own argument list (Forge/NeoForge run script), one argument per line. Its
+        // @.../win_args.txt or unix_args.txt is swapped for this system's, which the installer also wrote.
+#ifdef Q_OS_WIN
+        const QString native = "win_args.txt", foreign = "unix_args.txt";
+#else
+        const QString native = "unix_args.txt", foreign = "win_args.txt";
+#endif
+        for (QString arg : target.split('\n', Qt::SkipEmptyParts)) {
+            if (arg.startsWith('@') && arg.endsWith(foreign)) {
+                const QString swapped = arg.left(arg.size() - foreign.size()) + native;
+                if (QFileInfo::exists(FS::PathCombine(gameDir(), swapped.mid(1)))) {
+                    arg = swapped;
+                }
+            }
+            args << arg;
+        }
     } else {
         args << "-jar" << target;
     }
@@ -463,7 +477,7 @@ void ServerInstance::launchProcess(const QString& java)
     QString program;
     const QStringList args = buildArguments(java, &program);
     if (program.isEmpty() || !QFileInfo::exists(program)) {
-        m_lastError = isBedrock() ? tr("bedrock_server.exe was not found in the server folder.") : tr("Java was not found.");
+        m_lastError = isBedrock() ? tr("%1 was not found in the server folder.").arg(ServerSoftware::bedrockExecutable()) : tr("Java was not found.");
         appendLauncherLine(m_lastError, MessageLevel::Error);
         setStatus(Status::Crashed);
         return;

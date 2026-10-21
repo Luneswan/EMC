@@ -15,7 +15,12 @@ fail() { printf 'EMC install: %s\n' "$*" >&2; exit 1; }
 
 command -v curl >/dev/null 2>&1 || fail "curl is needed to download EMC."
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+MOUNT=""
+cleanup() {
+    if [ -n "$MOUNT" ]; then hdiutil detach "$MOUNT" -quiet 2>/dev/null || true; fi
+    rm -rf "$TMP"
+}
+trap cleanup EXIT
 
 install_macos() {
     say "Downloading EMC for macOS..."
@@ -35,6 +40,7 @@ install_macos() {
     rm -rf "$DEST/EMC.app"
     ditto "$MOUNT/EMC.app" "$DEST/EMC.app"
     hdiutil detach "$MOUNT" -quiet || true
+    MOUNT=""
     # Downloaded with curl, so macOS has not flagged it; clear the flag in case it was set anyway.
     xattr -dr com.apple.quarantine "$DEST/EMC.app" 2>/dev/null || true
 
