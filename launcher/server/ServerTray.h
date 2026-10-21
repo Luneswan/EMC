@@ -17,7 +17,7 @@ class QSystemTrayIcon;
 class ServerList;
 
 // Keeps servers reachable when the main window is closed: a tray icon with each server's
-// Start/Stop, plus "Start EMC with Windows".
+// Start/Stop, plus starting EMC when the user signs in.
 class ServerTray : public QObject {
     Q_OBJECT
    public:
@@ -30,6 +30,8 @@ class ServerTray : public QObject {
     void mainWindowClosed();
     void enterBackground(bool notify);
 
+    // "Start EMC with Windows", or "when you log in" elsewhere.
+    static QString startAtLoginText();
     static bool startWithWindows();
     static void setStartWithWindows(bool on);
 

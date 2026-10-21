@@ -26,8 +26,20 @@
 #include "ServerStepTask.h"
 
 namespace {
+// playit publishes the agent for Windows and Linux; there is no macOS build.
+#if defined(Q_OS_WIN)
 const char* kAgentUrl = "https://github.com/playit-cloud/playit-agent/releases/download/v0.17.1/playit-windows-x86_64-signed.exe";
 const char* kAgentSha256 = "9b00d6ff7d37d1052e5ae097e1348e11deae8617cd7a8ba39d1777f2006316a3";
+#elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM_64)
+const char* kAgentUrl = "https://github.com/playit-cloud/playit-agent/releases/download/v0.17.1/playit-linux-aarch64";
+const char* kAgentSha256 = "cd3fa1cedac40a71d80a120e6353e08836308840340b58e659e8f25d00601f66";
+#elif defined(Q_OS_LINUX)
+const char* kAgentUrl = "https://github.com/playit-cloud/playit-agent/releases/download/v0.17.1/playit-linux-amd64";
+const char* kAgentSha256 = "e78d463d93aa1e3ec36a06ded5a1f4fe879905fdceb865df8f4cef6124f8a555";
+#else
+const char* kAgentUrl = "";
+const char* kAgentSha256 = "";
+#endif
 constexpr int kClaimIntervalMs = 2000;
 constexpr int kClaimMaxAttempts = 300;  // ten minutes
 
@@ -46,6 +58,8 @@ class PlayitDownloadTask : public ServerStepTask {
                 emitFailed(tr("Could not save the playit agent."));
                 return;
             }
+            QFile agent(m_path);
+            agent.setPermissions(agent.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeUser);
             emitSucceeded();
         });
     }
@@ -121,9 +135,18 @@ QString PlayitAgent::folder() const
     return FS::PathCombine(APPLICATION->dataRoot(), "playit");
 }
 
+bool PlayitAgent::supported()
+{
+    return kAgentUrl[0] != '\0';
+}
+
 QString PlayitAgent::agentPath() const
 {
+#ifdef Q_OS_WIN
     return FS::PathCombine(folder(), QString("playit-%1.exe").arg(kVersion));
+#else
+    return FS::PathCombine(folder(), QString("playit-%1").arg(kVersion));
+#endif
 }
 
 QString PlayitAgent::claimUrl() const

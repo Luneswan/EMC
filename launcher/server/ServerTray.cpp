@@ -9,6 +9,9 @@
 
 #include "ServerTray.h"
 
+#include <QStandardPaths>
+#include <QFileInfo>
+#include <QFile>
 #include <QCoreApplication>
 #include <QDir>
 #include <QIcon>
@@ -112,7 +115,7 @@ void ServerTray::rebuildMenu()
         });
     }
     m_menu->addSeparator();
-    auto* autostart = m_menu->addAction(tr("Start EMC with Windows"));
+    auto* autostart = m_menu->addAction(startAtLoginText());
     autostart->setCheckable(true);
     autostart->setChecked(startWithWindows());
     connect(autostart, &QAction::toggled, this, [](bool on) { setStartWithWindows(on); });
@@ -139,29 +142,96 @@ void ServerTray::enterBackground(bool notify)
     }
 }
 
-bool ServerTray::startWithWindows()
+QString ServerTray::startAtLoginText()
 {
 #ifdef Q_OS_WIN
+    return tr("Start EMC with Windows");
+#else
+    return tr("Start EMC when you log in");
+#endif
+}
+
+namespace {
+// The program to start: the AppImage itself rather than its temporary mount, when EMC runs from one.
+QString startProgram()
+{
+    const QString appImage = qEnvironmentVariable("APPIMAGE");
+    return appImage.isEmpty() ? QCoreApplication::applicationFilePath() : appImage;
+}
+
+#ifdef Q_OS_MACOS
+QString launchAgentPath()
+{
+    return QDir::homePath() + "/Library/LaunchAgents/io.github.luneswan.EMC.plist";
+}
+#elif !defined(Q_OS_WIN)
+QString autostartPath()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/autostart/emc.desktop";
+}
+#endif
+}  // namespace
+
+bool ServerTray::startWithWindows()
+{
+#if defined(Q_OS_WIN)
     QSettings run(kRunKey, QSettings::NativeFormat);
     return run.contains(kRunValue);
+#elif defined(Q_OS_MACOS)
+    return QFileInfo::exists(launchAgentPath());
 #else
-    return false;
+    return QFileInfo::exists(autostartPath());
 #endif
 }
 
 void ServerTray::setStartWithWindows(bool on)
 {
-#ifdef Q_OS_WIN
+    // Starts quietly in the tray, with this data folder, so autostart servers come up.
+    const QString data = QDir::toNativeSeparators(APPLICATION->dataRoot());
+#if defined(Q_OS_WIN)
     QSettings run(kRunKey, QSettings::NativeFormat);
     if (on) {
-        // Starts quietly in the tray, with this data folder, so autostart servers come up.
-        const QString exe = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
-        const QString data = QDir::toNativeSeparators(APPLICATION->dataRoot());
+        const QString exe = QDir::toNativeSeparators(startProgram());
         run.setValue(kRunValue, QString("\"%1\" --tray --dir \"%2\"").arg(exe, data));
     } else {
         run.remove(kRunValue);
     }
+#elif defined(Q_OS_MACOS)
+    const QString path = launchAgentPath();
+    if (!on) {
+        QFile::remove(path);
+        return;
+    }
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        auto xml = [](const QString& text) { return text.toHtmlEscaped(); };
+        file.write(QString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                           "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+                           "<plist version=\"1.0\"><dict>\n"
+                           "  <key>Label</key><string>io.github.luneswan.EMC</string>\n"
+                           "  <key>ProgramArguments</key><array>\n"
+                           "    <string>%1</string><string>--tray</string><string>--dir</string><string>%2</string>\n"
+                           "  </array>\n"
+                           "  <key>RunAtLoad</key><true/>\n"
+                           "</dict></plist>\n")
+                       .arg(xml(startProgram()), xml(data))
+                       .toUtf8());
+    }
 #else
-    Q_UNUSED(on)
+    const QString path = autostartPath();
+    if (!on) {
+        QFile::remove(path);
+        return;
+    }
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        auto quote = [](QString text) { return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; };
+        file.write(QString("[Desktop Entry]\nType=Application\nName=EMC\nComment=Start EMC in the tray\n"
+                           "Exec=%1 --tray --dir %2\nIcon=io.github.luneswan.EMC\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
+                       .arg(quote(startProgram()), quote(data))
+                       .toUtf8());
+    }
 #endif
 }

@@ -25,6 +25,7 @@
 #include <QVBoxLayout>
 
 #include "Application.h"
+#include "server/ServerSoftware.h"
 #include "OptionCard.h"
 #include "minecraft/auth/AccountList.h"
 #include "server/ServerContent.h"
@@ -145,8 +146,14 @@ QWidget* NewServerDialog::buildEditionStep()
           tr("A Java server that Bedrock players can join too, through Geyser. Plugins work; some mods do not."), {} },
     };
     for (const auto& choice : choices) {
-        auto* card = new OptionCard(choice.title, choice.description, w);
+        const bool unavailable = choice.edition == Edition::Bedrock && !ServerSoftware::bedrockSupported();
+        auto* card = new OptionCard(choice.title,
+                                    unavailable ? tr("Mojang makes the Bedrock server for Windows and Linux only. Pick \"Java and Bedrock "
+                                                     "together\" to let Bedrock players join from this computer.")
+                                                : choice.description,
+                                    w);
         card->setBadge(choice.badge);
+        card->setEnabled(!unavailable);
         m_editionGroup->addButton(card, int(choice.edition));
         body->addWidget(card);
     }

@@ -141,10 +141,16 @@ ServerScan ServerImporter::scan(const QString& dirPath)
     }
 
     // Bedrock Dedicated Server
-    if (QFileInfo::exists(dir.filePath("bedrock_server.exe"))) {
+    if (QFileInfo::exists(dir.filePath("bedrock_server.exe")) || QFileInfo::exists(dir.filePath("bedrock_server"))) {
         s.software = "bedrock";
         s.launchType = "exe";
-        s.launchTarget = "bedrock_server.exe";
+        // This computer's build of the server; a folder copied from another system needs it re-downloaded.
+        s.launchTarget = ServerSoftware::bedrockExecutable();
+        if (!QFileInfo::exists(dir.filePath(s.launchTarget))) {
+            s.problem = QObject::tr("This Bedrock server was made for another system. Create a new Bedrock server here and copy "
+                                    "its worlds folder into it.");
+            return s;  // not valid
+        }
         s.port = hasProps ? props.intValue("server-port", 19132) : 19132;
         s.eulaAccepted = true;  // BDS has no eula.txt; its licence is agreed to when it is downloaded
         for (const auto& world : QDir(dir.filePath("worlds")).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {

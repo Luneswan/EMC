@@ -535,6 +535,11 @@ void ServerInstance::launchProcess(const QString& java)
     m_process->setWorkingDirectory(gameDir());
     auto env = QProcessEnvironment::systemEnvironment();
     env.remove("JAVA_TOOL_OPTIONS");  // a stray global setting must not change the server's memory or flags
+#ifdef Q_OS_LINUX
+    if (isBedrock()) {
+        env.insert("LD_LIBRARY_PATH", gameDir());  // the Linux Bedrock server loads libraries from its folder
+    }
+#endif
     m_process->setProcessEnvironment(env);
     connect(m_process, &LoggedProcess::log, this, &ServerInstance::onLog);
     connect(m_process, &LoggedProcess::stateChanged, this, &ServerInstance::onProcessState);

@@ -36,7 +36,17 @@ QString ServerJavaTask::installedJava(const QString& javaName)
     const QString exe = "java";
 #endif
     const QString path = javaDir.absoluteFilePath(FS::PathCombine(javaName, "bin", exe));
-    return QFileInfo::exists(path) ? path : QString();
+    if (QFileInfo::exists(path)) {
+        return path;
+    }
+#ifdef Q_OS_MACOS
+    // Mojang's macOS runtimes are bundles.
+    const QString bundled = javaDir.absoluteFilePath(FS::PathCombine(javaName, "jre.bundle", "Contents", "Home", "bin", exe));
+    if (QFileInfo::exists(bundled)) {
+        return bundled;
+    }
+#endif
+    return {};
 }
 
 void ServerJavaTask::executeTask()

@@ -275,7 +275,7 @@ void ServerVersionListTask::executeTask()
             static const QRegularExpression version("bedrock-server-([0-9.]+)\\.zip");
             for (const auto l : doc.object().value("result").toObject().value("links").toArray()) {
                 const auto o = l.toObject();
-                if (o.value("downloadType").toString() == "serverBedrockWindows") {
+                if (o.value("downloadType").toString() == ServerSoftware::bedrockDownloadType()) {
                     const auto m = version.match(o.value("downloadUrl").toString());
                     if (m.hasMatch()) {
                         add(m.captured(1));
@@ -287,4 +287,29 @@ void ServerVersionListTask::executeTask()
     } else {
         emitFailed(tr("Unknown server type: %1").arg(m_software));
     }
+}
+
+bool ServerSoftware::bedrockSupported()
+{
+    return !bedrockDownloadType().isEmpty();
+}
+
+QString ServerSoftware::bedrockDownloadType()
+{
+#if defined(Q_OS_WIN)
+    return "serverBedrockWindows";
+#elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_X86_64)
+    return "serverBedrockLinux";
+#else
+    return {};
+#endif
+}
+
+QString ServerSoftware::bedrockExecutable()
+{
+#ifdef Q_OS_WIN
+    return "bedrock_server.exe";
+#else
+    return "bedrock_server";
+#endif
 }

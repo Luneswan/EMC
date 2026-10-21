@@ -289,7 +289,7 @@ ServersView::ServersView(ServerList* list, QWidget* parent) : QWidget(parent), m
     m_footer = new QWidget(this);
     auto* footer = new QHBoxLayout(m_footer);
     footer->setContentsMargins(0, 0, 0, 0);
-    auto* startWithWindows = new QCheckBox(tr("Start EMC with Windows"), m_footer);
+    auto* startWithWindows = new QCheckBox(ServerTray::startAtLoginText(), m_footer);
     startWithWindows->setChecked(ServerTray::startWithWindows());
     auto* footerNote = new QLabel(tr("Servers set to \"Start when EMC starts\" then come up on their own. Closing EMC while a "
                                      "server runs keeps it running in the tray."),

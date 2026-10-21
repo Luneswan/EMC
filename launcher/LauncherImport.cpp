@@ -320,7 +320,10 @@ QList<LauncherImport::Source> LauncherImport::detect()
         consider(appData.absoluteFilePath(name));
     }
     const QString home = QDir::homePath();
-    for (const auto* name : { "scoop/persist/prismlauncher", "scoop/persist/multimc", "scoop/persist/polymc" }) {
+    // Scoop on Windows; Flatpak on Linux.
+    for (const auto* name : { "scoop/persist/prismlauncher", "scoop/persist/multimc", "scoop/persist/polymc",
+                              ".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher",
+                              ".var/app/org.polymc.PolyMC/data/PolyMC" }) {
         consider(QDir(home).absoluteFilePath(name));
     }
 
@@ -329,18 +332,19 @@ QList<LauncherImport::Source> LauncherImport::detect()
                           QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
                           QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation), home,
                           QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Programs" };
+#ifdef Q_OS_WIN
+    // Other drives too (D:\Games...). On macOS and Linux portable copies live under the home folder.
     for (const auto& volume : QStorageInfo::mountedVolumes()) {
         if (!volume.isValid() || !volume.isReady() || volume.isReadOnly()) {
             continue;
         }
-#ifdef Q_OS_WIN
         // Local disks only: a network share or a sleeping USB drive can hang the scan.
         if (GetDriveTypeW(reinterpret_cast<const wchar_t*>(volume.rootPath().utf16())) != DRIVE_FIXED) {
             continue;
         }
-#endif
         roots << volume.rootPath();
     }
+#endif
     static const QSet<QString> skip = { "windows", "$recycle.bin", "system volume information", "appdata", "node_modules",
                                         "programdata", "recovery", "msys64", ".git" };
     for (const auto& root : roots) {

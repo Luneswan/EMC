@@ -375,12 +375,13 @@ void ServerCreationTask::installBedrock()
     fetchJson(QUrl("https://net-secondary.web.minecraft-services.net/api/v1.0/download/links"), [this](const QJsonDocument& doc) {
         QString url;
         for (const auto l : doc.object().value("result").toObject().value("links").toArray()) {
-            if (l.toObject().value("downloadType").toString() == "serverBedrockWindows") {
+            if (l.toObject().value("downloadType").toString() == ServerSoftware::bedrockDownloadType()) {
                 url = l.toObject().value("downloadUrl").toString();
             }
         }
         if (url.isEmpty()) {
-            emitFailed(tr("Mojang's Bedrock server download could not be found."));
+            emitFailed(ServerSoftware::bedrockSupported() ? tr("Mojang's Bedrock server download could not be found.")
+                                                          : tr("Mojang makes the Bedrock server for Windows and Linux only."));
             return;
         }
         static const QRegularExpression version("bedrock-server-([0-9.]+)\\.zip");
@@ -391,7 +392,11 @@ void ServerCreationTask::installBedrock()
             setStatus(tr("Unpacking the Bedrock server"));
             runSubTask(makeShared<MMCZip::ExtractZipTask>(zip, QDir(gameDir())), [this, zip] {
                 QFile::remove(zip);
-                setLaunch("exe", "bedrock_server.exe");
+                const QString exe = ServerSoftware::bedrockExecutable();
+                // Zip files do not carry the executable bit.
+                QFile program(FS::PathCombine(gameDir(), exe));
+                program.setPermissions(program.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeGroup | QFileDevice::ExeOther);
+                setLaunch("exe", exe);
                 finish();
             });
         });

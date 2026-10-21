@@ -1,0 +1,282 @@
+name: Build
+
+# Builds EMC for Linux (AppImage, x86_64 and ARM) and macOS (one .dmg for Intel and Apple Silicon),
+# starts each build once on a virtual screen to check it opens, and attaches them to the release
+# when a version tag is pushed. The Windows installer is built with build-emc.sh and makensis.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  QT_VERSION: 6.11.2
+  BUILD_TYPE: Release
+  BUILD_PLATFORM: official
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+            triplet: x64-linux
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            triplet: arm64-linux
+    runs-on: ${{ matrix.os }}
+    env:
+      ARTIFACT_NAME: Linux-${{ matrix.arch }}
+      APPIMAGE: EMC-Linux-${{ matrix.arch }}.AppImage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install build tools
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install ninja-build extra-cmake-modules pkg-config scdoc libxcb-cursor-dev \
+            libfuse2t64 xvfb imagemagick
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          setup-python: false
+          # The aqtinstall commit Prism Launcher builds with (released versions lag behind new Qt).
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@16db45a70b5905ad596941b223469bc86a56901e
+          modules: qtimageformats qtnetworkauth
+          cache: true
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-${{ matrix.triplet }}-
+
+      - name: Get AppImage tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ~/bin
+          gh release download --repo VHSgunzo/sharun --pattern "sharun-${{ matrix.arch }}-aio" --output ~/bin/sharun
+          gh release download continuous --repo DioEgizio/go-appimage \
+            --pattern "mkappimage-*-${{ matrix.arch }}.AppImage" --output ~/bin/mkappimage
+          chmod +x ~/bin/*
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Configure
+        run: cmake --preset linux -D VCPKG_HOST_TRIPLET=${{ matrix.triplet }} -D VCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+
+      - name: Build
+        run: cmake --build --preset linux --config "$BUILD_TYPE"
+
+      - name: Test
+        run: ctest --preset linux --build-config "$BUILD_TYPE" --output-on-failure
+
+      - name: Package AppImage
+        run: |
+          rm -rf "$QT_PLUGIN_PATH"/{printsupport,sqldrivers,help,designer,qmltooling,qmlls,qmllint}
+          rm -f "$QT_PLUGIN_PATH"/platformthemes/libqgtk3.so
+
+          APPDIR=appdir
+          cmake --install build --config "$BUILD_TYPE" --prefix "$APPDIR"
+          sharun lib4bin --hard-links --with-hooks --dst-dir "$APPDIR" "$APPDIR"/bin/* "$QT_PLUGIN_PATH"/*/*.so
+          # gamemode needs the system's D-Bus setup and does not travel well inside an AppImage.
+          find "$APPDIR" -name '*gamemode*' -exec rm {} +
+          # Native file pickers through the desktop portal.
+          echo "QT_QPA_PLATFORMTHEME=xdgdesktopportal" >> "$APPDIR"/.env
+          ln -s share/applications/io.github.luneswan.EMC.desktop "$APPDIR"
+          ln -s share/icons/hicolor/256x256/apps/io.github.luneswan.EMC.png "$APPDIR"
+          mv "$APPDIR"/sharun "$APPDIR"/AppRun
+          mkappimage "$APPDIR" "$APPIMAGE"
+          ls -la "$APPIMAGE"
+
+      - name: Check that EMC opens
+        run: |
+          # Starts the packaged AppImage on a virtual screen with an empty data folder.
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          chmod +x "$APPIMAGE"
+          xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
+            "./$APPIMAGE" -d "$RUNNER_TEMP/emc-data" > emc.log 2>&1 &
+            pid=$!
+            sleep 45
+            import -window root "screenshot-linux-${{ matrix.arch }}.png"
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "EMC exited early:"; cat emc.log; exit 1
+            fi
+            kill "$pid"
+          '
+          echo "EMC was still running after 45 seconds."
+          tail -n 40 emc.log || true
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APPIMAGE }}
+          path: ${{ env.APPIMAGE }}
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-linux-${{ matrix.arch }}
+          path: |
+            screenshot-linux-*.png
+            emc.log
+          if-no-files-found: ignore
+
+  macos:
+    name: macOS
+    runs-on: macos-26
+    env:
+      ARTIFACT_NAME: macOS
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install build tools
+        run: |
+          brew update
+          brew install ninja extra-cmake-modules
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          setup-python: false
+          # The aqtinstall commit Prism Launcher builds with (released versions lag behind new Qt).
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@16db45a70b5905ad596941b223469bc86a56901e
+          modules: qtimageformats qtnetworkauth
+          cache: true
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-universal-osx-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: vcpkg-universal-osx-
+
+      - name: Configure
+        run: cmake --preset macos_universal -D VCPKG_HOST_TRIPLET=universal-osx -D VCPKG_TARGET_TRIPLET=universal-osx
+
+      - name: Build
+        run: cmake --build --preset macos_universal --config "$BUILD_TYPE"
+
+      - name: Test
+        run: ctest --preset macos_universal --build-config "$BUILD_TYPE" --output-on-failure
+
+      - name: Package DMG
+        run: |
+          cmake --install build --config "$BUILD_TYPE"
+          cd install
+          APP="$(ls -d *.app | head -n 1)"
+          [ "$APP" = "EMC.app" ] || mv "$APP" EMC.app
+          chmod +x EMC.app/Contents/MacOS/EMC
+          # No Apple Developer ID yet: an ad-hoc signature, which Apple Silicon requires to run at all.
+          codesign --sign - --deep --force --entitlements ../program_info/AdhocSignedApp.entitlements \
+            --options runtime EMC.app
+          codesign --verify --deep --verbose=2 EMC.app
+
+          mkdir -p dmg
+          cp -R EMC.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "EMC" -srcfolder dmg -ov -format ULMO ../EMC-macOS.dmg
+          ls -la ../EMC-macOS.dmg
+
+      - name: Check that EMC opens
+        run: |
+          # Installs from the .dmg the way a user would, then starts it with an empty data folder.
+          MOUNT="$(hdiutil attach -nobrowse -readonly EMC-macOS.dmg | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -n 1)"
+          ditto "$MOUNT/EMC.app" "$RUNNER_TEMP/EMC.app"
+          hdiutil detach "$MOUNT" -quiet
+          lipo -archs "$RUNNER_TEMP/EMC.app/Contents/MacOS/EMC"
+          "$RUNNER_TEMP/EMC.app/Contents/MacOS/EMC" -d "$RUNNER_TEMP/emc-data" > emc.log 2>&1 &
+          pid=$!
+          sleep 45
+          screencapture -x screenshot-macos.png || true
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "EMC exited early:"; cat emc.log; exit 1
+          fi
+          kill "$pid"
+          echo "EMC was still running after 45 seconds."
+          tail -n 40 emc.log || true
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: EMC-macOS.dmg
+          path: EMC-macOS.dmg
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-macos
+          path: |
+            screenshot-macos.png
+            emc.log
+          if-no-files-found: ignore
+
+  release:
+    name: Attach to release
+    needs: [linux, macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: EMC-*
+          merge-multiple: true
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -la
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "EMC ${TAG#v}" --notes ""
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber EMC-*.AppImage EMC-macOS.dmg

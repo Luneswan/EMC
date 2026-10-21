@@ -31,6 +31,8 @@ class PlayitAgent : public QObject {
    public:
     static constexpr const char* kVersion = "0.17.1";
     static PlayitAgent* instance();
+    // playit has an agent for Windows and Linux, not macOS.
+    static bool supported();
 
     bool isLinked() const { return !m_secret.isEmpty(); }
     bool isLinking() const { return !m_code.isEmpty(); }

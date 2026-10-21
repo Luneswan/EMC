@@ -125,9 +125,12 @@ ServerNetworkPage::ServerNetworkPage(ServerInstance* server, QWidget* parent) : 
                                "Does not work on every internet connection."),
                             content);
     m_playit = new OptionCard(tr("Use a playit.gg tunnel"),
-                              tr("Works on any internet connection, including shared and mobile ones. Free; link "
-                                 "EMC to playit.gg once."),
+                              PlayitAgent::supported()
+                                  ? tr("Works on any internet connection, including shared and mobile ones. Free; link "
+                                       "EMC to playit.gg once.")
+                                  : tr("playit.gg makes its tunnel program for Windows and Linux only, so it is not available here."),
                               content);
+    m_playit->setEnabled(PlayitAgent::supported());
     int index = 0;
     for (auto* card : { m_off, m_upnp, m_playit }) {
         card->setCheckable(true);
@@ -634,7 +637,13 @@ void ServerNetworkPage::testFromInternet()
             case RouterCheck::Reachable::No:
                 setNote(guard->m_testResult, 
                     guard->m_server && guard->m_server->publicMode() == "upnp"
+#ifdef Q_OS_WIN
                         ? tr("Not reachable yet. Windows Firewall may be blocking Java: allow it when Windows asks, or try playit.gg.")
+#elif defined(Q_OS_MACOS)
+                        ? tr("Not reachable yet. If macOS asked whether Java may accept connections, choose Allow.")
+#else
+                        ? tr("Not reachable yet. A firewall on this computer may be blocking the port, or try playit.gg.")
+#endif
                         : tr("Not reachable yet. The tunnel can take a minute to connect; test again shortly."));
                 break;
             case RouterCheck::Reachable::Unknown:

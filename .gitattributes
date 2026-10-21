@@ -1,2 +1,4 @@
 *.pem -crlf
 **/testdata/** -text -diff
+*.sh text eol=lf
+*.yml text eol=lf

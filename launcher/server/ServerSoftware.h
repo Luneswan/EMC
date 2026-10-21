@@ -37,6 +37,13 @@ const Info* find(const QString& id);
 QString categoryName(Category category);
 QString categoryDescription(Category category);
 
+// Mojang makes the Bedrock Dedicated Server for Windows and Linux only.
+bool bedrockSupported();
+// The "downloadType" of this platform's server in Mojang's download list.
+QString bedrockDownloadType();
+// The server program inside the Bedrock folder.
+QString bedrockExecutable();
+
 }  // namespace ServerSoftware
 
 struct ServerVersionEntry {
