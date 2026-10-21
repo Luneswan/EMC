@@ -1406,7 +1406,7 @@ void WindowCat::drawSit(QPainter& p, bool happy, double pawRaise, bool swat)
         drawFur(p, leg);
         drawSocks(p, leg, { paw }, 3.6);
     }
-    drawHead(p, headAt, 13.5, happy, swat, swat);
+    drawHead(p, headAt, 13.5, happy, swat, false);
     if (pawRaise > 0 && !swat) {
         // Licking: the paw comes up to the mouth, the tongue flicks over it.
         const QPointF paw = P(4.4, 74.6) + (P(7, 41.5) - P(4.4, 74.6)) * pawRaise;
