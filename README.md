@@ -2,11 +2,31 @@
 
 Play, mod and host Minecraft from one place.
 
-**[Download EMC for Windows](https://github.com/Luneswan/EMC/releases/latest/download/EMC-Setup.exe)** and run it. It installs for you only, needs no admin rights, and adds EMC to the Start menu and desktop. Java is downloaded by itself when a game needs it.
+## Install
+
+**Windows:** **[download EMC-Setup.exe](https://github.com/Luneswan/EMC/releases/latest/download/EMC-Setup.exe)** and run it. It installs for you only, needs no admin rights, and adds EMC to the Start menu and desktop.
+
+**macOS and Linux:** open Terminal and paste this line:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Luneswan/EMC/main/install.sh | sh
+```
+
+On a Mac it puts EMC in Applications; on Linux it adds EMC to your app menu. No admin password is needed, and running the same line again updates EMC.
+
+Java is downloaded by itself whenever a game or server needs it, on every system.
+
+<details>
+<summary>Prefer to download the files yourself?</summary>
+
+- **Windows, no installer:** `EMC-windows-x64.zip`. Unzip it anywhere and run `EMC.exe`.
+- **macOS:** `EMC-macOS.dmg` (Intel and Apple Silicon, macOS 13 or newer). Open it and drag EMC to Applications. EMC is not signed with a paid Apple developer ID yet, so the first time macOS says it cannot check it: open **System Settings → Privacy & Security** and click **Open Anyway**. The install line above avoids this.
+- **Linux:** `EMC-Linux-x86_64.AppImage` or `EMC-Linux-aarch64.AppImage`. Make it executable (`chmod +x`) and run it.
+
+All of them are on the [release page](https://github.com/Luneswan/EMC/releases/latest).
+</details>
 
 Coming from another launcher? EMC finds Prism Launcher, PolyMC, MultiMC and UltimMC on your computer by itself (installed or portable) and brings your instances, worlds, groups, accounts and Java over, without copying anything twice. The other launcher keeps its own files. A copy kept somewhere unusual can be added from **Folders → Import from Prism, MultiMC or UltimMC…**.
-
-Prefer no installer? Take `EMC-windows-x64.zip` from the [release page](https://github.com/Luneswan/EMC/releases/latest), unzip it anywhere and run `EMC.exe`.
 
 ## What it does
 
@@ -18,12 +38,17 @@ Prefer no installer? Take `EMC-windows-x64.zip` from the [release page](https://
   - Memory and settings tuned to your computer automatically, or set by hand.
   - A console, a player list and a settings editor.
 - **Friends anywhere.** Open a port on your router automatically, or use a free playit.gg tunnel when your connection cannot accept incoming players. A built-in test tells you which one works on your connection.
-- **Runs in the background.** Keep servers running in the system tray, and start EMC with Windows if you like.
+- **Runs in the background.** Keep servers running in the system tray (the menu bar on a Mac), and start EMC when you sign in if you like.
+- **Windows, macOS and Linux.** Everything works on all three, with two exceptions that come from the makers of those programs: Mojang makes the Bedrock server only for Windows and Linux (on a Mac, Bedrock players join a Java server through Geyser), and playit.gg makes its tunnel only for Windows and Linux (a Mac can still open a router port).
 - **Always up to date.** Before a game starts, EMC updates its mods from Modrinth and CurseForge to the newest build for that Minecraft version and loader, adding any new mods they need. Before a server starts, its plugins and mods are updated from Modrinth the same way (releases only, never downgraded, and a Bukkit plugin is never swapped for a Fabric mod).
 - **Java sorted for you.** Each game version gets the Java it needs, downloaded and switched automatically when you change versions.
 - **Works with other launchers.** Import instances from Prism Launcher, MultiMC, CurseForge, Modrinth, ATLauncher and Technic. Exported instances open in Prism Launcher, PolyMC and MultiMC too.
 
-## Build from source (Windows)
+## Build from source
+
+macOS and Linux builds are made by GitHub Actions (`.github/workflows/build.yml`), which uses the `linux` and `macos_universal` CMake presets with Qt 6 and vcpkg.
+
+### Windows
 
 You need [MSYS2](https://www.msys2.org/) with the UCRT64 environment:
 
