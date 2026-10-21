@@ -27,8 +27,8 @@
 namespace {
 #ifdef Q_OS_WIN
 const char* kRunKey = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-#endif
 const char* kRunValue = "EMC";
+#endif
 
 QString statusMark(const ServerInstance* server)
 {

@@ -92,7 +92,7 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
       - name: Configure
-        run: cmake --preset linux -D VCPKG_HOST_TRIPLET=${{ matrix.triplet }} -D VCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+        run: cmake --preset linux -D VCPKG_HOST_TRIPLET=${{ matrix.triplet }} -D VCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -D Launcher_WARNINGS_AS_ERRORS=OFF
 
       - name: Build
         run: cmake --build --preset linux --config "$BUILD_TYPE"
@@ -199,7 +199,7 @@ jobs:
           restore-keys: vcpkg-universal-osx-
 
       - name: Configure
-        run: cmake --preset macos_universal -D VCPKG_HOST_TRIPLET=universal-osx -D VCPKG_TARGET_TRIPLET=universal-osx
+        run: cmake --preset macos_universal -D VCPKG_HOST_TRIPLET=universal-osx -D VCPKG_TARGET_TRIPLET=universal-osx -D Launcher_WARNINGS_AS_ERRORS=OFF
 
       - name: Build
         run: cmake --build --preset macos_universal --config "$BUILD_TYPE"

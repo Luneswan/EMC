@@ -27,14 +27,15 @@
 #endif
 
 namespace {
-const QString kRuleName = "EMC Minecraft server";
-const QString kRequestFlag = "--emc-firewall-allow";
-
 ServerFirewall::Asker& asker()
 {
     static ServerFirewall::Asker instance;
     return instance;
 }
+
+#ifdef Q_OS_WIN
+const QString kRuleName = "EMC Minecraft server";
+const QString kRequestFlag = "--emc-firewall-allow";
 
 QString normalized(const QString& program)
 {
@@ -55,6 +56,7 @@ void setDeclined(const QString& program, bool on)
     }
     APPLICATION->settings()->set("ServerFirewallDeclined", list.join('|'));
 }
+#endif
 }  // namespace
 
 void ServerFirewall::setAsker(Asker value)
