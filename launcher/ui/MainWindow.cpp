@@ -973,8 +973,8 @@ void MainWindow::setCatBackground(bool enabled)
                     addTop(QRect(b->mapTo(this, QPoint(0, 0)), b->size()), 2);
                 }
             }
-            // The tops of the instance tiles that are on screen.
-            if (auto* model = view->model()) {
+            // The tops of the instance tiles that are on screen (not while another tab, such as Servers, covers the list).
+            if (auto* model = view->model(); model && view->isVisible()) {
                 const QRect viewport = view->viewport()->rect();
                 for (int row = 0; row < model->rowCount(); ++row) {
                     const QRect r = view->visualRect(model->index(row, 0));

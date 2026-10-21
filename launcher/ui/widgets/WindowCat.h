@@ -58,7 +58,10 @@ class WindowCat : public QWidget {
     bool eventFilter(QObject* watched, QEvent* event) override;
 
    private:
-    enum class State { Sit, Walk, Sleep, Held, Air, Purr, Hang };
+    // Groom: licks a raised paw. Stretch: a play bow (and a yawn), always after a nap.
+    // Zoom: a sudden sprint. Crouch: stalking the cursor, rear wiggling, before a pounce.
+    // Swat: a quick paw at a cursor waved in front of its face.
+    enum class State { Sit, Walk, Sleep, Held, Air, Purr, Hang, Groom, Stretch, Zoom, Crouch, Swat };
 
     struct Coat {
         QString id;
@@ -88,6 +91,8 @@ class WindowCat : public QWidget {
     void decideIdle();
     bool tryLeap();
     bool tryPounce();
+    bool canPounce() const;
+    bool tryPlay();
     void stepHang(double dt);
     bool cursorCatchable() const;
     void setTransparent(bool transparent);
@@ -107,7 +112,9 @@ class WindowCat : public QWidget {
     double maxX() const;
     double maxY() const;
 
-    void drawSit(QPainter& p, bool happy);
+    // pawRaise: 0 = both front paws down; else how far the right front paw is lifted (groom or swat).
+    void drawSit(QPainter& p, bool happy, double pawRaise = 0, bool swat = false);
+    void drawStretch(QPainter& p);
     void drawWalk(QPainter& p);
     void drawSleep(QPainter& p);
     void drawHanging(QPainter& p, bool falling, bool byPaws = false);
@@ -159,6 +166,11 @@ class WindowCat : public QWidget {
     QPointF m_cursorVel;
     double m_cursorStill = 0;
     double m_pounceCooldown = 8;
+    double m_swatCooldown = 0;
+    double m_playCooldown = 6;
+    double m_gait = 0;       // walk cycle phase; runs faster when hunting or sprinting
+    double m_speedMul = 1;   // walk speed: 1 strolling, more when trotting after the cursor
+    double m_dustAt = 0;
     bool m_pouncing = false;
 
     bool m_pressed = false;

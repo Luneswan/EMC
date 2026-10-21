@@ -241,6 +241,13 @@ void WindowCat::step(double dt)
     m_squash = qMax(0.0, m_squash - dt * 5.0);
     m_dizzy = qMax(0.0, m_dizzy - dt);
     m_pounceCooldown = qMax(0.0, m_pounceCooldown - dt);
+    m_swatCooldown = qMax(0.0, m_swatCooldown - dt);
+    m_playCooldown = qMax(0.0, m_playCooldown - dt);
+    if (m_state == State::Walk) {
+        m_gait += dt * 8.5 * m_speedMul;
+    } else if (m_state == State::Zoom) {
+        m_gait += dt * 22;
+    }
 
     // Where the cursor is, how fast it moves and how long it has rested: the cat stalks a still cursor.
     {
@@ -306,16 +313,24 @@ void WindowCat::stepGrounded(double dt)
     }
     setFeet(QPointF(feet().x(), ledge->y));
 
-    // A cursor resting within reach above is irresistible, now and then.
+    // A cursor resting within reach above is irresistible, now and then: crouch, wiggle, then pounce.
     if ((m_state == State::Sit || m_state == State::Walk) && m_dizzy <= 0 && m_pounceCooldown <= 0 && m_cursorStill > 0.7 &&
-        chance(2) && tryPounce()) {
+        chance(2) && canPounce()) {
+        const double dx = m_cursor.x() - feet().x();
+        if (std::abs(dx) > 4) {
+            m_facing = dx > 0 ? 1 : -1;
+        }
+        setState(State::Crouch);
+        return;
+    }
+    if ((m_state == State::Sit || m_state == State::Walk) && m_dizzy <= 0 && tryPlay()) {
         return;
     }
 
     switch (m_state) {
         case State::Walk: {
             QPointF f = feet();
-            f.rx() += m_facing * kWalkSpeed * dt;
+            f.rx() += m_facing * kWalkSpeed * m_speedMul * dt;
             const bool atWall = f.x() - kCx * kScale <= 0 || f.x() + kCx * kScale >= parentWidget()->width();
             const bool nearEdge = (m_facing > 0 && f.x() >= ledge->x2 - 3) || (m_facing < 0 && f.x() <= ledge->x1 + 3);
             if (atWall) {
@@ -339,6 +354,56 @@ void WindowCat::stepGrounded(double dt)
             }
             break;
         }
+        case State::Zoom: {
+            // A sprint with ears back. Turns at walls, sometimes takes a ledge edge at full tilt.
+            QPointF f = feet();
+            f.rx() += m_facing * kWalkSpeed * 4.2 * dt;
+            if (f.x() - kCx * kScale <= 0 || f.x() + kCx * kScale >= parentWidget()->width()) {
+                m_facing = -m_facing;
+                m_squash = 0.3;
+                spawn(Particle::Dust, QPointF(kCx, kGround), 3);
+                break;
+            }
+            const bool overEdge = (m_facing > 0 && f.x() >= ledge->x2 - 2) || (m_facing < 0 && f.x() <= ledge->x1 + 2);
+            if (overEdge) {
+                if (chance(45)) {
+                    m_vel = QPointF(m_facing * kWalkSpeed * 4.2, -320);
+                    m_leaping = true;
+                    setState(State::Air);
+                    return;
+                }
+                m_facing = -m_facing;
+                m_squash = 0.3;
+                break;
+            }
+            setFeet(f);
+            if (m_t - m_dustAt > 0.14) {
+                m_dustAt = m_t;
+                spawn(Particle::Dust, QPointF(kCx - 18, kGround), 1);
+            }
+            if (m_stateTime > m_stateLimit) {
+                // Skid to a stop, then groom as if nothing happened.
+                m_squash = 0.5;
+                spawn(Particle::Dust, QPointF(kCx + 10, kGround), 5);
+                setState(State::Groom);
+            }
+            break;
+        }
+        case State::Crouch:
+            // Eyes on the cursor; if it moves off or out of reach the moment passes.
+            if (!canPounce() || m_cursorStill <= 0) {
+                setState(State::Sit);
+            } else if (m_stateTime > m_stateLimit && !tryPounce()) {
+                setState(State::Sit);
+            }
+            break;
+        case State::Groom:
+        case State::Stretch:
+        case State::Swat:
+            if (m_stateTime > m_stateLimit) {
+                setState(State::Sit);
+            }
+            break;
         case State::Purr:
             if (m_stateTime > 1.8) {
                 setState(State::Sit);
@@ -441,7 +506,7 @@ void WindowCat::setTransparent(bool transparent)
     setAttribute(Qt::WA_TransparentForMouseEvents, transparent);
 }
 
-bool WindowCat::tryPounce()
+bool WindowCat::canPounce() const
 {
     if (!cursorCatchable()) {
         return false;
@@ -449,9 +514,50 @@ bool WindowCat::tryPounce()
     const QPointF grip = feet() - QPointF(0, (kGround - kGripY) * kScale);
     const double rise = grip.y() - m_cursor.y();
     const double dx = m_cursor.x() - grip.x();
-    if (rise < 24 || rise > 260 || std::abs(dx) > 240) {
+    return rise >= 24 && rise <= 260 && std::abs(dx) <= 240;
+}
+
+bool WindowCat::tryPlay()
+{
+    // Reactions to a moving cursor: a swat when it waves in front of the face, a trot when it
+    // runs along the cat's own level.
+    if (!cursorCatchable()) {
         return false;
     }
+    const double speed = std::hypot(m_cursorVel.x(), m_cursorVel.y());
+    const QPointF head = feet() - QPointF(0, 45 * kScale);
+    const QPointF d = m_cursor - head;
+    if (m_state == State::Sit && m_swatCooldown <= 0 && speed > 90 && std::abs(d.x()) < 46 && std::abs(d.y()) < 34) {
+        if (std::abs(d.x()) > 3) {
+            m_facing = d.x() > 0 ? 1 : -1;
+        }
+        m_swatCooldown = rnd(0.9, 2.2);
+        wake();
+        setState(State::Swat);
+        return true;
+    }
+    const double level = feet().y() - m_cursor.y();
+    if (m_playCooldown <= 0 && speed > 160 && std::abs(m_cursorVel.x()) > std::abs(m_cursorVel.y()) && level > 0 && level < 110 &&
+        std::abs(d.x()) > 70 && std::abs(d.x()) < 320 && chance(3)) {
+        m_playCooldown = rnd(6.0, 14.0);
+        m_facing = d.x() > 0 ? 1 : -1;
+        wake();
+        setState(State::Walk);
+        m_speedMul = 2.0;
+        m_stateLimit = rnd(1.0, 2.0);
+        return true;
+    }
+    return false;
+}
+
+bool WindowCat::tryPounce()
+{
+    if (!canPounce()) {
+        return false;
+    }
+    const QPointF grip = feet() - QPointF(0, (kGround - kGripY) * kScale);
+    const double rise = grip.y() - m_cursor.y();
+    const double dx = m_cursor.x() - grip.x();
     // Ballistic jump whose apex is the cursor.
     const double vy0 = -std::sqrt(2 * kGravity * rise);
     const double tUp = -vy0 / kGravity;
@@ -562,6 +668,7 @@ void WindowCat::setState(State state)
     m_state = state;
     m_stateTime = 0;
     m_edgeChoice = 0;
+    m_speedMul = 1;
     switch (state) {
         case State::Sit:
             m_stateLimit = rnd(3.0, 8.0);
@@ -571,6 +678,21 @@ void WindowCat::setState(State state)
             break;
         case State::Hang:
             m_stateLimit = rnd(2.5, 5.5);
+            break;
+        case State::Groom:
+            m_stateLimit = rnd(2.5, 5.0);
+            break;
+        case State::Stretch:
+            m_stateLimit = rnd(2.0, 2.8);
+            break;
+        case State::Zoom:
+            m_stateLimit = rnd(1.2, 2.6);
+            break;
+        case State::Crouch:
+            m_stateLimit = rnd(0.7, 1.4);
+            break;
+        case State::Swat:
+            m_stateLimit = 0.42;
             break;
         default:
             m_stateLimit = 0;
@@ -583,14 +705,25 @@ void WindowCat::setState(State state)
 void WindowCat::decideIdle()
 {
     const int roll = QRandomGenerator::global()->bounded(100);
-    if (roll < 22 && tryLeap()) {
+    if (roll < 20 && tryLeap()) {
         return;
     }
-    if (roll < 70) {
+    if (roll < 56) {
         if (chance(40)) {
             m_facing = -m_facing;
         }
         setState(State::Walk);
+    } else if (roll < 68) {
+        setState(State::Groom);
+    } else if (roll < 73) {
+        setState(State::Stretch);
+    } else if (roll < 77 && window()->isActiveWindow()) {
+        // Now and then, for no reason at all.
+        if (chance(50)) {
+            m_facing = -m_facing;
+        }
+        m_squash = 0.5;
+        setState(State::Zoom);
     } else {
         setState(State::Sit);
     }
@@ -600,7 +733,7 @@ void WindowCat::wake()
 {
     m_idleTime = 0;
     if (m_state == State::Sleep) {
-        setState(State::Sit);
+        setState(State::Stretch);  // every cat stretches after a nap
     }
 }
 
@@ -885,7 +1018,28 @@ void WindowCat::paintEvent(QPaintEvent*)
             drawSit(p, true);
             break;
         case State::Walk:
+        case State::Zoom:
             drawWalk(p);
+            break;
+        case State::Crouch: {
+            // Low to the ground with the rear end wiggling side to side.
+            p.translate(kCx, kGround);
+            p.scale(1.05, 0.8);
+            p.rotate(std::sin(m_stateTime * 19) * 2.2);
+            p.translate(-kCx, -kGround);
+            drawWalk(p);
+            break;
+        }
+        case State::Groom: {
+            const double lick = 0.82 + 0.18 * std::sin(m_stateTime * 9);
+            drawSit(p, false, qMin(1.0, m_stateTime * 4) * lick);
+            break;
+        }
+        case State::Swat:
+            drawSit(p, false, std::sin(qMin(1.0, m_stateTime / m_stateLimit) * M_PI), true);
+            break;
+        case State::Stretch:
+            drawStretch(p);
             break;
         case State::Sleep:
             drawSleep(p);
@@ -1189,7 +1343,7 @@ void WindowCat::drawHead(QPainter& p, QPointF c, double r, bool happy, bool wide
     }
 }
 
-void WindowCat::drawSit(QPainter& p, bool happy)
+void WindowCat::drawSit(QPainter& p, bool happy, double pawRaise, bool swat)
 {
     // Seated and facing the viewer, like the head: a teardrop body from the neck out to the haunches,
     // front legs straight down the middle, white chest and paws, the tail curled round the front.
@@ -1220,7 +1374,9 @@ void WindowCat::drawSit(QPainter& p, bool happy)
     p.drawPath(bib);
     // Front paws, and the hind feet peeking out from under the haunches.
     p.drawEllipse(P(-4.4, 74.6), 4.3, 3.2);
-    p.drawEllipse(P(4.4, 74.6), 4.3, 3.2);
+    if (pawRaise <= 0) {
+        p.drawEllipse(P(4.4, 74.6), 4.3, 3.2);
+    }
     p.drawEllipse(P(-14.5, 75.2), 3.8, 2.4);
     p.drawEllipse(P(14.5, 75.2), 3.8, 2.4);
     p.restore();
@@ -1240,14 +1396,98 @@ void WindowCat::drawSit(QPainter& p, bool happy)
     drawTail(p, P(16, 70), P(24, 81), P(4, 82), P(-12 + flick * 0.4, 78.5 - std::abs(flick) * 0.5), 6);
 
     const double bob = happy ? std::sin(m_t * 9) * 0.8 : 0;
-    drawHead(p, QPointF(cx, G - 45 + bob), 13.5, happy, false, false);
+    // Grooming: the head dips to the raised paw. A swat keeps the eyes wide on the target.
+    const double dip = pawRaise > 0 && !swat ? pawRaise * 3.5 : 0;
+    const QPointF headAt(cx + dip * 0.4, G - 45 + bob + dip);
+    if (pawRaise > 0 && swat) {
+        // The striking paw goes behind the head so it reads as reaching forward past the face.
+        const QPointF paw = P(4.4, 74.6) + (P(19, 32) - P(4.4, 74.6)) * pawRaise;
+        const QPainterPath leg = limb(P(5, 48), (P(5, 48) + paw) / 2 + QPointF(3, 2), paw, 7.5, 6);
+        drawFur(p, leg);
+        drawSocks(p, leg, { paw }, 3.6);
+    }
+    drawHead(p, headAt, 13.5, happy, swat, swat);
+    if (pawRaise > 0 && !swat) {
+        // Licking: the paw comes up to the mouth, the tongue flicks over it.
+        const QPointF paw = P(4.4, 74.6) + (P(7, 41.5) - P(4.4, 74.6)) * pawRaise;
+        const QPainterPath leg = limb(P(4, 50), (P(4, 50) + paw) / 2 + QPointF(4.5, 0), paw, 7.5, 6.2);
+        drawFur(p, leg);
+        drawSocks(p, leg, { paw }, 3.8);
+        if (pawRaise > 0.9 && std::sin(m_stateTime * 9) > 0.2) {
+            p.setPen(QPen(m_coat.outline, 0.8));
+            p.setBrush(QColor(0xF2, 0x8C, 0x9A));
+            p.drawEllipse(headAt + QPointF(2.5, 8.2), 2.0, 2.6);
+        }
+    }
+}
+
+void WindowCat::drawStretch(QPainter& p)
+{
+    // A play bow: front end down with the forelegs reaching out along the ground, rear up, tail high,
+    // and a yawn at the deepest point. Eases in and back out over the state's length.
+    const double u = qBound(0.0, m_stateTime / qMax(0.1, m_stateLimit), 1.0);
+    const double bow = std::sin(u * M_PI);
+    const double G = kGround;
+    auto P = [&](double x, double y) { return QPointF(kCx - 48 + x, G - 76 + y); };
+
+    QTransform tilt;
+    const QPointF pivot = P(46, 52);
+    tilt.translate(pivot.x(), pivot.y());
+    tilt.rotate(15 * bow);
+    tilt.translate(-pivot.x(), -pivot.y());
+
+    const QPointF hindHip = tilt.map(P(32, 55)), frontHip = tilt.map(P(61, 56));
+    const QPointF hindPaw(hindHip.x() - 1, G - 2.6), frontPaw(frontHip.x() + 4 + 18 * bow, G - 2.8);
+    const QPointF frontKnee = (frontHip + frontPaw) / 2 + QPointF(0, 2 * (1 - bow));
+
+    const double sway = std::sin(m_t * 2.4) * 4;
+    drawTail(p, tilt.map(P(26, 49)), tilt.map(P(18, 38)), tilt.map(P(14, 28)), tilt.map(P(20 + sway, 18)), 8.5);
+
+    QPainterPath far = limb(frontHip + QPointF(-3, 0), frontKnee + QPointF(-3, 0), frontPaw + QPointF(-4, 0), 8, 6);
+    far.addPath(limb(hindHip + QPointF(-3, 0), (hindHip + hindPaw) / 2 + QPointF(-5, 0), hindPaw + QPointF(-3, 0), 10.5, 6));
+    far.setFillRule(Qt::WindingFill);
+    far = far.simplified();
+    drawFur(p, far, true);
+    drawSocks(p, far, { frontPaw + QPointF(-4, 0), hindPaw + QPointF(-3, 0) }, 3.4);
+
+    QPainterPath torso;
+    torso.moveTo(P(70, 50));
+    torso.cubicTo(P(70.5, 57), P(66, 61.5), P(59, 61.5));
+    torso.cubicTo(P(50, 61.5), P(41, 62), P(33, 61.5));
+    torso.cubicTo(P(26, 61), P(23, 56.5), P(23.5, 51));
+    torso.cubicTo(P(24, 45.5), P(29, 43), P(35, 43.5));
+    torso.cubicTo(P(45, 44.5), P(55, 43.5), P(61, 41.5));
+    torso.cubicTo(P(67, 40), P(70, 44), P(70, 50));
+    torso.closeSubpath();
+    QPainterPath body = tilt.map(torso);
+    body.setFillRule(Qt::WindingFill);
+    body.addPath(limb(frontHip, frontKnee, frontPaw, 8, 6));
+    body.addPath(limb(hindHip, (hindHip + hindPaw) / 2 + QPointF(-4, 0), hindPaw, 10.5, 6));
+    body = body.simplified();
+    drawFur(p, body);
+    drawSocks(p, body, { frontPaw, hindPaw }, 3.6);
+
+    const QPointF head = tilt.map(P(69, 39)) + QPointF(2 * bow, 3 * bow);
+    drawHead(p, head, 11.8, bow > 0.55, false, false);
+    if (bow > 0.55) {
+        // The yawn.
+        const double open = (bow - 0.55) / 0.45;
+        p.setPen(QPen(m_coat.outline, 0.9));
+        p.setBrush(QColor(0x4A, 0x16, 0x1C));
+        p.drawEllipse(head + QPointF(0.8, 7.6), 2.6 + open, 1.2 + 3.0 * open);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0xF2, 0x8C, 0x9A));
+        p.drawEllipse(head + QPointF(0.8, 8.6 + 1.6 * open), 1.6 + 0.6 * open, 1.0 + 0.8 * open);
+    }
 }
 
 void WindowCat::drawWalk(QPainter& p)
 {
     const double G = kGround;
-    const double phase = m_t * 8.5;
-    const double sway = std::sin(m_t * 3) * 6;
+    const double phase = m_gait;
+    const bool sprint = m_state == State::Zoom;
+    const bool stalk = m_state == State::Crouch;
+    const double sway = stalk ? std::sin(m_t * 14) * 2.5 : std::sin(m_t * (sprint ? 7 : 3)) * 6;
     const double bob = std::abs(std::sin(phase)) * 1.2;
     auto P = [&](double x, double y) { return QPointF(kCx - 48 + x, G - 76 + y - bob); };
 
@@ -1262,7 +1502,12 @@ void WindowCat::drawWalk(QPainter& p)
     };
     const QPointF frontHip = P(61, 56), hindHip = P(32, 55);
 
-    drawTail(p, P(26, 49), P(15, 46), P(9, 37), P(13 + sway, 29), 8.5);
+    if (sprint || stalk) {
+        // Sprinting the tail streams out behind; stalking it stays low with a twitching tip.
+        drawTail(p, P(26, 49), P(16, 44), P(8, 40), P(1, stalk ? 54 + sway : 34 + sway * 0.5), 8.5);
+    } else {
+        drawTail(p, P(26, 49), P(15, 46), P(9, 37), P(13 + sway, 29), 8.5);
+    }
 
     QPointF farFrontPaw, farHindPaw;
     QPainterPath farLegs = leg(frontHip + QPointF(-3, 0), M_PI, false, &farFrontPaw);
@@ -1301,7 +1546,7 @@ void WindowCat::drawWalk(QPainter& p)
     lines.cubicTo(P(42, 52), P(41, 58), P(36, 61.5));
     drawContour(p, body, lines);
 
-    drawHead(p, P(69, 39), 11.8, false, false, false);
+    drawHead(p, P(69, 39), 11.8, false, sprint || stalk, sprint);
 }
 
 void WindowCat::drawLeap(QPainter& p)
