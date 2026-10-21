@@ -1,0 +1,73 @@
+#pragma once
+
+#include "ResourceDownloadTask.h"
+#include "ReviewMessageBox.h"
+
+#include "minecraft/mod/ModFolderModel.h"
+
+#include "modplatform/CheckUpdateTask.h"
+
+class Minecraft;
+class Mod;
+class ModrinthCheckUpdate;
+class FlameCheckUpdate;
+class ConcurrentTask;
+
+class ResourceUpdateDialog final : public ReviewMessageBox {
+    Q_OBJECT
+   public:
+    explicit ResourceUpdateDialog(QWidget* parent,
+                                  MinecraftInstance* instance,
+                                  ResourceFolderModel* resourceModel,
+                                  QList<Resource*>& searchFor,
+                                  bool includeDeps,
+                                  QList<ModPlatform::ModLoaderType> loadersList = {},
+                                  std::vector<ModPlatform::IndexedVersionType> releaseTypes = {});
+
+    void checkCandidates();
+
+    void appendResource(const CheckUpdateTask::Update& info, QStringList requiredBy = {});
+
+    QList<ResourceDownloadTask::Ptr> getTasks() const;
+    auto indexDir() const -> QDir { return m_resourceModel->indexDir(); }
+
+    auto noUpdates() const -> bool { return m_noUpdates; };
+    auto aborted() const -> bool { return m_aborted; };
+    // Checks without asking or reporting anything, for updates EMC applies by itself.
+    void setQuiet(bool quiet) { m_quiet = quiet; }
+
+   private:
+    auto ensureMetadata() -> bool;
+
+   private slots:
+    void onMetadataEnsured(Resource* resource);
+    void onMetadataFailed(Resource* resource,
+                          bool tryOthers = false,
+                          ModPlatform::ResourceProvider firstChoice = ModPlatform::ResourceProvider::MODRINTH);
+
+   private:
+    QWidget* m_parent;
+
+    shared_qobject_ptr<ModrinthCheckUpdate> m_modrinthCheckTask;
+    shared_qobject_ptr<FlameCheckUpdate> m_flameCheckTask;
+
+    ResourceFolderModel* m_resourceModel;
+
+    QList<Resource*>& m_candidates;
+    QList<Resource*> m_modrinthToUpdate;
+    QList<Resource*> m_flameToUpdate;
+
+    ConcurrentTask::Ptr m_secondTryMetadata;
+    QList<std::tuple<Resource*, QString>> m_failedMetadata;
+    QList<std::tuple<Resource*, QString, QUrl>> m_failedCheckUpdate;
+
+    QHash<QString, ResourceDownloadTask::Ptr> m_tasks;
+    MinecraftInstance* m_instance;
+
+    bool m_noUpdates = false;
+    bool m_aborted = false;
+    bool m_includeDeps = false;
+    bool m_quiet = false;
+    QList<ModPlatform::ModLoaderType> m_loadersList;
+    std::vector<ModPlatform::IndexedVersionType> m_releaseTypes;
+};

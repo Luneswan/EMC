@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+  <id>@Launcher_AppID@</id>
+  <name>EMC</name>
+  <summary>Play, mod and host Minecraft from one place</summary>
+  <developer id="io.github.luneswan">
+    <name>Luneswan</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>EMC plays, mods and hosts Minecraft.</p>
+    <ul>
+      <li>Offline and Microsoft accounts</li>
+      <li>One-click Minecraft install, mods, modpacks and resource packs</li>
+      <li>Java and Bedrock servers with plugins and mods, tuned to your computer</li>
+      <li>Let friends join over the internet with port forwarding or a playit.gg tunnel</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">@Launcher_AppID@.desktop</launchable>
+  <url type="homepage">https://github.com/Luneswan/EMC</url>
+  <url type="bugtracker">https://github.com/Luneswan/EMC/issues</url>
+  <url type="vcs-browser">https://github.com/Luneswan/EMC</url>
+  <content_rating type="oars-1.1" />
+</component>
