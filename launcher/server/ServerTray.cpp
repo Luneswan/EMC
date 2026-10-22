@@ -18,6 +18,7 @@
 #include <QMenu>
 #include <QSettings>
 #include <QSystemTrayIcon>
+#include <QTimer>
 
 #include "Application.h"
 #include "ServerInstance.h"
@@ -121,6 +122,17 @@ void ServerTray::rebuildMenu()
     connect(autostart, &QAction::toggled, this, [](bool on) { setStartWithWindows(on); });
     m_menu->addSeparator();
     m_menu->addAction(m_servers->runningCount() > 0 ? tr("Stop Servers and Quit") : tr("Quit EMC"), this, &ServerTray::quitRequested);
+}
+
+void ServerTray::notify(const QString& title, const QString& message)
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable() || !QSystemTrayIcon::supportsMessages())
+        return;
+    const bool wasVisible = m_icon->isVisible();
+    m_icon->setVisible(true);
+    m_icon->showMessage(title, message, APPLICATION->logo(), 8000);
+    if (!wasVisible)
+        QTimer::singleShot(10000, this, &ServerTray::updateVisibility);
 }
 
 void ServerTray::mainWindowClosed()

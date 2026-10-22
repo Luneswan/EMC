@@ -529,16 +529,41 @@ ${IfNot} ${Errors}
 ${EndIf}
 FunctionEnd
 
+; EMC's own updater passes /Relaunch so the new version opens where the old one closed.
+Function .onInstSuccess
+${GetParameters} $R0
+${GetOptions} $R0 "/Relaunch" $R1
+${IfNot} ${Errors}
+  Exec '"$INSTDIR\@Launcher_APP_BINARY_NAME@.exe"'
+${EndIf}
+FunctionEnd
+
 ;--------------------------------
 
 ; A running EMC may be hosting servers, so ask before closing it. Silent installs (updates) close it as before.
 !macro CLOSE_RUNNING UN
 Function ${UN}CloseRunning
+  ReadEnvStr $3 USERNAME
   ${If} ${Silent}
+    ; An update started by EMC itself: give it up to 15 s to finish closing (servers stop, settings save).
+    StrCpy $4 0
+    wait:
+      nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq @Launcher_APP_BINARY_NAME@.exe" /FI "USERNAME eq $3" /NH'
+      Pop $0
+      Pop $1
+      Push $1
+      Push "@Launcher_APP_BINARY_NAME@.exe"
+      Call ${UN}StrContains
+      Pop $2
+      ${If} $2 != ""
+      ${AndIf} $4 < 30
+        Sleep 500
+        IntOp $4 $4 + 1
+        Goto wait
+      ${EndIf}
     nsExec::Exec /TIMEOUT=2000 'TaskKill /IM @Launcher_APP_BINARY_NAME@.exe /F'
     Return
   ${EndIf}
-  ReadEnvStr $3 USERNAME
   loop:
     ; Only this user's copy: another signed-in user's EMC cannot be closed from here.
     nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq @Launcher_APP_BINARY_NAME@.exe" /FI "USERNAME eq $3" /NH'

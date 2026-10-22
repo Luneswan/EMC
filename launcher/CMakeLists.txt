@@ -769,6 +769,8 @@ set(SERVER_SOURCES
     server/ServerNetwork.cpp
     server/ServerTray.h
     server/ServerTray.cpp
+    updater/EmcUpdater.h
+    updater/EmcUpdater.cpp
     server/PortMapper.h
     server/PortMapper.cpp
     server/RouterCheck.h

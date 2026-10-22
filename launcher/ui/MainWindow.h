@@ -75,6 +75,7 @@ class MainWindow : public QMainWindow {
     bool eventFilter(QObject* obj, QEvent* ev) override;
     void closeEvent(QCloseEvent* event) override;
     void changeEvent(QEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
     void checkInstancePathForProblems();
 
@@ -222,6 +223,8 @@ class MainWindow : public QMainWindow {
 
    private:
     void retranslateUi();
+    void setupUpdateButton();
+    void fitMainToolBar();
 
     void updateNameLabel();
 
@@ -241,6 +244,8 @@ class MainWindow : public QMainWindow {
 
    private:
     Ui::MainWindow* ui;
+    QAction* m_updateAction = nullptr;
+    int m_toolBarTextWidth = -1;  // main toolbar width with labels; -1 = measure again
     // these are managed by Qt's memory management model!
     InstanceView* view = nullptr;
     QStackedWidget* m_mainStack = nullptr;

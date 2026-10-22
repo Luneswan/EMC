@@ -73,6 +73,7 @@
 #include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
+#include <QDesktopServices>
 #include <QMessageBox>
 #include <QPainter>
 #include <QProgressDialog>
@@ -110,6 +111,9 @@
 #include "ui/dialogs/CopyInstanceDialog.h"
 #include "ui/dialogs/CreateShortcutDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
+#include "updater/EmcUpdater.h"
+#include "server/ServerList.h"
+#include "server/ServerTray.h"
 #include "ui/dialogs/ExportInstanceDialog.h"
 #include "ui/dialogs/ExportPackDialog.h"
 #include "ui/dialogs/IconPickerDialog.h"
@@ -447,6 +451,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     QWidget* spacer = new QWidget();
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     ui->mainToolBar->insertWidget(ui->actionAccountsButton, spacer);
+    setupUpdateButton();
 
     // Instances | Servers
     {
@@ -553,6 +558,7 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
 
 void MainWindow::retranslateUi()
 {
+    m_toolBarTextWidth = -1;  // labels change length with the language
     if (m_selectedInstance) {
         m_statusLeft->setText(m_selectedInstance->getStatusbarDescription());
     } else {
@@ -579,6 +585,61 @@ void MainWindow::retranslateUi()
         if (action->toolTip().contains("%1"))
             action->setToolTip(action->toolTip().arg(BuildConfig.LAUNCHER_DISPLAYNAME));
     }
+}
+
+void MainWindow::setupUpdateButton()
+{
+    auto* updater = APPLICATION->emcUpdater();
+    if (!updater)
+        return;
+    auto* button = new QToolButton(this);
+    button->setObjectName("updateButton");
+    button->setCursor(Qt::PointingHandCursor);
+    m_updateAction = ui->mainToolBar->insertWidget(ui->actionAccountsButton, button);
+    m_updateAction->setVisible(false);
+
+    auto showReady = [this, button, updater](const QString& version, bool notify) {
+        button->setText(tr("Restart to update"));
+        button->setToolTip(tr("EMC %1 is downloaded. Restart EMC to finish updating.").arg(version));
+        m_updateAction->setVisible(true);
+        m_toolBarTextWidth = -1;
+        fitMainToolBar();
+        if (notify && APPLICATION->serverTray())
+            APPLICATION->serverTray()->notify(tr("EMC %1 is ready").arg(version),
+                                              tr("Restart EMC to update. If you don't, it updates the next time you close EMC."));
+    };
+    auto showAvailable = [this, button](const QString& version, bool notify) {
+        button->setText(tr("Get EMC %1").arg(version));
+        button->setToolTip(tr("A new EMC is out. This copy can't update itself, so this opens the download page."));
+        m_updateAction->setVisible(true);
+        m_toolBarTextWidth = -1;
+        fitMainToolBar();
+        if (notify && APPLICATION->serverTray())
+            APPLICATION->serverTray()->notify(tr("EMC %1 is out").arg(version), tr("Click the button at the top of EMC to get it."));
+    };
+
+    connect(button, &QToolButton::clicked, this, [this, updater] {
+        if (!updater->isReady()) {
+            QDesktopServices::openUrl(QUrl(updater->releasePage()));
+            return;
+        }
+        if (const int running = APPLICATION->servers()->runningCount(); running > 0) {
+            const auto answer = QMessageBox::question(
+                this, tr("Restart to update"),
+                tr("%n server(s) are running. They save and stop first, then EMC updates and opens again.", "", running),
+                QMessageBox::Ok | QMessageBox::Cancel, QMessageBox::Ok);
+            if (answer != QMessageBox::Ok)
+                return;
+        }
+        updater->restartToUpdate();
+    });
+    connect(updater, &EmcUpdater::updateReady, this, [showReady](const QString& v) { showReady(v, true); });
+    connect(updater, &EmcUpdater::updateAvailable, this, [showAvailable](const QString& v) { showAvailable(v, true); });
+    // A main window opened again from the tray picks up an update found earlier.
+    if (updater->isReady())
+        showReady(updater->latestVersion(), false);
+    else if (updater->isAvailable())
+        showAvailable(updater->latestVersion(), false);
 }
 
 MainWindow::~MainWindow() {}
@@ -1788,6 +1849,28 @@ void MainWindow::on_actionViewSelectedInstFolder_triggered()
         QString str = m_selectedInstance->instanceRoot();
         DesktopServices::openPath(QFileInfo(str));
     }
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    fitMainToolBar();
+}
+
+// A toolbar wider than the window silently drops its last items - here Accounts and the update button.
+// Below the labelled width the buttons show icons only, so everything stays reachable.
+void MainWindow::fitMainToolBar()
+{
+    auto* bar = ui->mainToolBar;
+    if (m_toolBarTextWidth < 0) {
+        const auto style = bar->toolButtonStyle();
+        bar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        m_toolBarTextWidth = bar->sizeHint().width();
+        bar->setToolButtonStyle(style);
+    }
+    const auto wanted = width() < m_toolBarTextWidth ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon;
+    if (bar->toolButtonStyle() != wanted)
+        bar->setToolButtonStyle(wanted);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)

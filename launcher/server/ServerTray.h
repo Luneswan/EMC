@@ -29,6 +29,8 @@ class ServerTray : public QObject {
     // The main window closed: stay in the tray if a server is running (or EMC started in the tray).
     void mainWindowClosed();
     void enterBackground(bool notify);
+    // A system notification, shown even while the tray icon is hidden.
+    void notify(const QString& title, const QString& message);
 
     // "Start EMC with Windows", or "when you log in" elsewhere.
     static QString startAtLoginText();

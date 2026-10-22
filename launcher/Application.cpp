@@ -159,6 +159,7 @@
 #endif
 #else
 #include "updater/PrismExternalUpdater.h"
+#include "updater/EmcUpdater.h"
 #endif
 
 #if defined Q_OS_WIN32
@@ -1040,6 +1041,13 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         connect(m_serverTray.get(), &ServerTray::openRequested, this, [this] { showMainWindow(); });
         connect(m_serverTray.get(), &ServerTray::quitRequested, this, [] { QCoreApplication::quit(); });
         qInfo() << "<> Servers loaded:" << m_servers->rowCount();
+    }
+
+    // EMC updates itself from its GitHub releases. Made after the servers so that, on quit, they have
+    // stopped before a downloaded update starts installing.
+    {
+        m_emcUpdater.reset(new EmcUpdater(network(), FS::PathCombine(m_dataPath, "updates")));
+        m_emcUpdater->start();
     }
 
     // and accounts

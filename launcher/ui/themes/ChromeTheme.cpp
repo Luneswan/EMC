@@ -148,6 +148,9 @@ QFrame#serverCard { background: rgba(255,255,255,0.035); border: 1px solid rgba(
 QFrame#serverCard:hover { background: rgba(255,255,255,0.055); border-color: rgba(255,255,255,0.12); }
 QWidget#serverCards { background: transparent; }
 QWidget#modeSwitch { background: #070708; border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; }
+QToolButton#updateButton { color: #0B0B0C; border: none; border-radius: 7px; padding: 4px 14px; margin-right: 6px; font-weight: 600; background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #D6D7DC); }
+QToolButton#updateButton:hover { background: #FFFFFF; }
+QToolButton#updateButton:pressed { background: #CFD0D5; }
 QToolButton#modeButton { color: #A1A1A6; border-radius: 7px; padding: 4px 14px; font-weight: 600; }
 QToolButton#modeButton:hover { color: #F5F5F7; background: rgba(255,255,255,0.05); }
 QToolButton#modeButton:checked { color: #0B0B0C; background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #D6D7DC); border-color: transparent; }

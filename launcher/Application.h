@@ -68,6 +68,7 @@ class IconList;
 class QNetworkAccessManager;
 class JavaInstallList;
 class ExternalUpdater;
+class EmcUpdater;
 class BaseProfilerFactory;
 class BaseDetachedToolFactory;
 class TranslationsModel;
@@ -128,6 +129,8 @@ class Application : public QApplication {
     ThemeManager* themeManager() { return m_themeManager.get(); }
 
     ExternalUpdater* updater() { return m_updater.get(); }
+    EmcUpdater* emcUpdater() { return m_emcUpdater.get(); }
+    ServerTray* serverTray() { return m_serverTray.get(); }
 
     void triggerUpdateCheck();
 
@@ -260,6 +263,7 @@ class Application : public QApplication {
     std::unique_ptr<InstanceList> m_instances;
     std::unique_ptr<ServerList> m_servers;
     std::unique_ptr<ServerTray> m_serverTray;
+    std::unique_ptr<EmcUpdater> m_emcUpdater;
     std::unique_ptr<IconList> m_icons;
     std::unique_ptr<JavaInstallList> m_javalist;
     std::unique_ptr<TranslationsModel> m_translations;
