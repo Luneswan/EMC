@@ -159,8 +159,8 @@
 #endif
 #else
 #include "updater/PrismExternalUpdater.h"
-#include "updater/EmcUpdater.h"
 #endif
+#include "updater/EmcUpdater.h"
 
 #if defined Q_OS_WIN32
 #ifndef WIN32_LEAN_AND_MEAN
