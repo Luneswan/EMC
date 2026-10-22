@@ -42,6 +42,8 @@
 #include <QtMath>
 
 #include <QIcon>
+#include <QResizeEvent>
+#include <QTextDocument>
 #include <QTextEdit>
 #include "BaseInstance.h"
 #include "InstanceList.h"
@@ -238,6 +240,23 @@ class NoReturnTextEdit : public QTextEdit {
         setTextInteractionFlags(Qt::TextEditorInteraction);
         setHorizontalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);
         setVerticalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);
+        // EMC: an opaque, compact box (styled in ChromeTheme) so the tile's own label never shows through,
+        // growing with the name instead of cutting it off.
+        setObjectName("instanceRenameEditor");
+        setAcceptRichText(false);
+        document()->setDocumentMargin(2);
+        connect(document(), &QTextDocument::contentsChanged, this, &NoReturnTextEdit::fitHeight);
+    }
+    void fitHeight()
+    {
+        document()->setTextWidth(viewport()->width());
+        const int contentHeight = qCeil(document()->size().height());
+        setFixedHeight(contentHeight + 2 * frameWidth() + contentsMargins().top() + contentsMargins().bottom());
+    }
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QTextEdit::resizeEvent(event);
+        fitHeight();
     }
     bool event(QEvent* event) override
     {
@@ -265,8 +284,13 @@ void ListViewDelegate::updateEditorGeometry(QWidget* editor,
 {
     const int iconSize = 48;
     QRect textRect = option.rect;
-    textRect.adjust(0, iconSize + 5, 0, 0);
+    // A little wider than the tile, so a typical name fits on one or two lines.
+    textRect.adjust(-8, iconSize + 2, 8, 0);
+    if (textRect.left() < 0)  // the first tile in a row: stay inside the view
+        textRect.moveLeft(0);
     editor->setGeometry(textRect);
+    if (auto* edit = qobject_cast<NoReturnTextEdit*>(editor))
+        edit->fitHeight();
 }
 
 void ListViewDelegate::setEditorData(QWidget* editor, const QModelIndex& index) const

@@ -226,6 +226,7 @@ QStatusBar { background: #0B0B0D; color: #8E8E93; border-top: 1px solid rgba(255
 QStatusBar::item { border: none; }
 QSplitter::handle { background: rgba(255,255,255,0.06); }
 QAbstractScrollArea { background: transparent; }
+QTextEdit#instanceRenameEditor { background: #1C1C1F; color: #F5F5F7; border: 1px solid rgba(255,255,255,0.55); border-radius: 6px; padding: 1px 2px; selection-background-color: rgba(255,255,255,0.85); selection-color: #0B0B0C; }
 
 /* First-run setup: roomy, one idea per page. */
 QWizard QLabel#qt_wizard_title { font-size: 20px; font-weight: 600; color: #FFFFFF; }
