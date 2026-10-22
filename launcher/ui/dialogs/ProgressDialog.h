@@ -36,6 +36,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QUuid>
 #include <memory>
@@ -43,8 +44,7 @@
 #include "QObjectPtr.h"
 #include "tasks/Task.h"
 
-#include "ui/widgets/SubTaskProgressBar.h"
-
+class QLabel;
 class Task;
 class SequentialTask;
 
@@ -89,7 +89,8 @@ class ProgressDialog : public QDialog {
 
    private:
     bool handleImmediateResult(QDialog::DialogCode& result);
-    void addTaskProgress(TaskStepProgress const& progress);
+    void refreshStepLine(bool force = false);
+    void refreshSideText();
 
    private:
     Ui::ProgressDialog* ui;
@@ -99,5 +100,20 @@ class ProgressDialog : public QDialog {
     QList<QMetaObject::Connection> m_taskConnections;
 
     bool m_is_multi_step = false;
-    QHash<QUuid, SubTaskProgressBar*> taskProgress;
+
+    // EMC: the dozens of parallel file downloads are summed up in one quiet line instead of a bar each.
+    struct Step {
+        qint64 order = 0;
+        QString status;
+        qint64 current = 0;
+        qint64 total = -1;
+    };
+    QHash<QUuid, Step> m_steps;
+    qint64 m_nextStepOrder = 0;
+    QUuid m_shownStep;
+    QElapsedTimer m_stepTick;
+    QLabel* m_stepLabel = nullptr;
+    QLabel* m_stepPercent = nullptr;
+    QString m_sideText;
+    int m_percent = -1;
 };

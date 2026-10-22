@@ -38,12 +38,13 @@
 #include "ui_ProgressDialog.h"
 
 #include <QDebug>
+#include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QLabel>
+#include <QRegularExpression>
 #include <limits>
 
 #include "tasks/Task.h"
-
-#include "ui/widgets/SubTaskProgressBar.h"
 
 // map a value in a numeric range of an arbitrary type to between 0 and INT_MAX
 // for getting the best precision out of the qt progress bar
@@ -63,15 +64,59 @@ std::tuple<int, int> map_int_zero_max(T current, T range_max, T range_min)
     return { mapped_current, int_max };
 }
 
+namespace {
+
+// Long labels are cut with an ellipsis rather than wrapped, so the window never jumps in height.
+void setElided(QLabel* label, const QString& text)
+{
+    const int width = label->width() > 40 ? label->width() : 320;
+    label->setText(label->fontMetrics().elidedText(text, Qt::ElideRight, width));
+    label->setToolTip(text.size() > 40 ? text : QString());
+}
+
+// "Downloading 6be14445d7574aed..." says nothing to a player.
+QString readableStep(QString status)
+{
+    static const QRegularExpression hash(QStringLiteral("\\b[0-9a-fA-F]{20,}\\b"));
+    if (status.contains(hash))
+        return QObject::tr("Downloading game files");
+    return status.trimmed();
+}
+
+}  // namespace
+
 ProgressDialog::ProgressDialog(QWidget* parent) : QDialog(parent), ui(new Ui::ProgressDialog)
 {
     ui->setupUi(this);
     // EMC: thin bar, percentage as text next to the status instead of inside the bar.
     ui->globalProgressBar->setTextVisible(false);
-    ui->globalStatusDetailsLabel->setProperty("role", "body");
+    ui->globalStatusLabel->setProperty("role", "cardTitle");
+    ui->globalStatusLabel->setWordWrap(false);
+    ui->globalStatusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    ui->globalStatusLabel->setMinimumSize(0, 0);
+    ui->globalStatusDetailsLabel->setProperty("role", "note");
     ui->verticalLayout->setSpacing(10);
-    ui->verticalLayout->setContentsMargins(20, 18, 20, 18);
+    ui->verticalLayout->setContentsMargins(22, 20, 22, 18);
+    // EMC never shows the per-file list; see refreshStepLine().
     ui->taskProgressScrollArea->setHidden(true);
+
+    m_stepLabel = new QLabel(this);
+    m_stepPercent = new QLabel(this);
+    for (auto* label : { m_stepLabel, m_stepPercent })
+        label->setProperty("role", "note");
+    m_stepLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_stepPercent->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_stepLabel->setText(QStringLiteral(" "));
+    auto* stepRow = new QHBoxLayout();
+    stepRow->setSpacing(12);
+    stepRow->addWidget(m_stepLabel, 1);
+    stepRow->addWidget(m_stepPercent);
+    ui->verticalLayout->insertLayout(2, stepRow);
+    ui->verticalLayout->setAlignment(ui->skipButton, Qt::AlignRight);
+    ui->skipButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    ui->skipButton->setMinimumWidth(96);
+    setSizeGripEnabled(false);
+    m_stepTick.start();
     this->setWindowFlags(this->windowFlags() & ~Qt::WindowContextHelpButtonHint);
     setAttribute(Qt::WidgetAttribute::WA_QuitOnClose, true);
     changeProgress(0, 100);
@@ -171,7 +216,6 @@ int ProgressDialog::execWithTask(Task* task)
     this->m_taskConnections.push_back(connect(task, &Task::abortButtonTextChanged, ui->skipButton, &QPushButton::setText));
 
     m_is_multi_step = task->isMultiStep();
-    ui->taskProgressScrollArea->setHidden(!m_is_multi_step);
     updateSize();
 
     // It's a good idea to start the task after we entered the dialog's event loop :^)
@@ -231,53 +275,78 @@ void ProgressDialog::onTaskSucceeded()
 
 void ProgressDialog::changeStatus([[maybe_unused]] const QString& status)
 {
-    ui->globalStatusLabel->setText(m_task->getStatus());
-    ui->globalStatusLabel->adjustSize();
-    ui->globalStatusDetailsLabel->setText(m_task->getDetails());
-    ui->globalStatusDetailsLabel->adjustSize();
-
-    updateSize();
+    // The headline is what is happening ("Downloading game files"); the step counter sits quietly on the right.
+    const QString taskStatus = m_task->getStatus().trimmed();
+    const QString taskDetails = m_task->getDetails().trimmed();
+    setElided(ui->globalStatusLabel, taskDetails.isEmpty() ? taskStatus : taskDetails);
+    m_sideText = taskDetails.isEmpty() ? QString() : taskStatus;
+    refreshSideText();
 }
 
-void ProgressDialog::addTaskProgress(const TaskStepProgress& progress)
+void ProgressDialog::refreshSideText()
 {
-    SubTaskProgressBar* task_bar = new SubTaskProgressBar(this);
-    taskProgress.insert(progress.uid, task_bar);
-    ui->taskProgressLayout->addWidget(task_bar);
+    if (!m_sideText.isEmpty())
+        ui->globalStatusDetailsLabel->setText(m_sideText);
+    else
+        ui->globalStatusDetailsLabel->setText(m_percent >= 0 ? QString("%1%").arg(m_percent) : QString());
+}
+
+void ProgressDialog::refreshStepLine(bool force)
+{
+    // Text that changes forty times a second is unreadable; refresh it a few times a second at most.
+    if (!force && m_stepTick.elapsed() < 150)
+        return;
+    m_stepTick.restart();
+
+    // Show the longest-running step that is still going: that is the stage, the newer ones are its files.
+    const Step* shown = nullptr;
+    QUuid shownId;
+    for (auto it = m_steps.cbegin(); it != m_steps.cend(); ++it) {
+        if (it->status.isEmpty())
+            continue;
+        if (!shown || it->order < shown->order) {
+            shown = &it.value();
+            shownId = it.key();
+        }
+    }
+    if (!shown)
+        return;  // keep the last line rather than blinking empty between stages
+    m_shownStep = shownId;
+    setElided(m_stepLabel, shown->status);
+    if (shown->total > 0)
+        m_stepPercent->setText(QString("%1%").arg(qBound<qint64>(qint64(0), 100 * shown->current / shown->total, qint64(100))));
+    else
+        m_stepPercent->clear();
 }
 
 void ProgressDialog::changeStepProgress(const TaskStepProgress& task_progress)
 {
     m_is_multi_step = true;
-    if (ui->taskProgressScrollArea->isHidden()) {
-        ui->taskProgressScrollArea->setHidden(false);
-        updateSize();
+    if (task_progress.isDone()) {
+        m_steps.remove(task_progress.uid);
+        refreshStepLine(task_progress.uid == m_shownStep);
+        return;
     }
-
-    if (!taskProgress.contains(task_progress.uid))
-        addTaskProgress(task_progress);
-    auto task_bar = taskProgress.value(task_progress.uid);
-
-    const auto [mapped_current, mapped_total] = map_int_zero_max<qint64>(task_progress.current, task_progress.total, 0);
-    if (task_progress.total <= 0) {
-        task_bar->setRange(0, 0);
-    } else {
-        task_bar->setRange(0, mapped_total);
-    }
-
-    task_bar->setValue(mapped_current);
-    task_bar->setStatus(task_progress.status);
-    task_bar->setDetails(task_progress.details);
-    task_bar->setVisible(!task_progress.isDone());
+    auto it = m_steps.find(task_progress.uid);
+    if (it == m_steps.end())
+        it = m_steps.insert(task_progress.uid, Step{ m_nextStepOrder++, {}, 0, -1 });
+    it->status = readableStep(task_progress.status);
+    it->current = task_progress.current;
+    it->total = task_progress.total;
+    refreshStepLine(m_shownStep.isNull());
 }
 
 void ProgressDialog::changeProgress(qint64 current, qint64 total)
 {
-    ui->globalProgressBar->setMaximum(total);
-    ui->globalProgressBar->setValue(current);
-    if (m_task && m_task->getDetails().isEmpty() && total > 0) {
-        ui->globalStatusDetailsLabel->setText(QString("%1%").arg(qRound(100.0 * current / total)));
+    const auto [mapped_current, mapped_total] = map_int_zero_max<qint64>(current, total, 0);
+    if (total <= 0) {
+        ui->globalProgressBar->setRange(0, 0);
+    } else {
+        ui->globalProgressBar->setRange(0, mapped_total);
+        ui->globalProgressBar->setValue(mapped_current);
     }
+    m_percent = total > 0 ? qRound(100.0 * current / total) : -1;
+    refreshSideText();
 }
 
 void ProgressDialog::keyPressEvent(QKeyEvent* e)
