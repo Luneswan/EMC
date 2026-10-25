@@ -98,7 +98,8 @@ void ExternalToolsPage::loadSettings()
 void ExternalToolsPage::setupWorldToolBrowseBtn(QTreeWidgetItem* item)
 {
     auto* btn = new QPushButton("...");
-    btn->setFixedWidth(30);
+    // The theme pads push buttons by 34px; a fixed 30px width left no room for the dots. Keep it compact instead.
+    btn->setStyleSheet("QPushButton { padding: 1px 8px; min-height: 0px; }");
     connect(btn, &QPushButton::clicked, this, [this, item]() {
 #ifdef Q_OS_WIN
         const QString filter = tr("Executables (*.exe *.bat);;All Files (*)");

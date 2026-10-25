@@ -96,6 +96,20 @@ void LauncherPartLaunch::executeTask()
     QString allArgs = args.join(" ");
     emit logLine("Java arguments:\n  " + m_parent->censorPrivateInfo(allArgs) + "\n", MessageLevel::Launcher);
 
+    // Skin server accounts: authlib-injector points the game's sign-in, skins and capes at that server.
+    if (m_session && !m_session->yggdrasil_server.isEmpty() && !m_session->authlib_injector_jar.isEmpty()) {
+        QString agentJar = m_session->authlib_injector_jar;
+#ifdef Q_OS_WIN
+        agentJar = FS::getPathNameInLocal8bit(agentJar);
+#endif
+        args.prepend("-javaagent:" + agentJar + "=" + m_session->yggdrasil_server);
+        args << "-Dauthlibinjector.side=client";
+        if (!m_session->yggdrasil_metadata.isEmpty())
+            args << "-Dauthlibinjector.yggdrasil.prefetched=" + m_session->yggdrasil_metadata;
+        emit logLine("Skins and multiplayer sign-in go through " + m_session->yggdrasil_server + " (authlib-injector)\n",
+                     MessageLevel::Launcher);
+    }
+
     auto javaPath = FS::ResolveExecutable(instance->settings()->get("JavaPath").toString());
 
     m_process.setProcessEnvironment(instance->createLaunchEnvironment());

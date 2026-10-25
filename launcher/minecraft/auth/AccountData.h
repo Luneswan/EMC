@@ -88,7 +88,9 @@ struct MinecraftProfile {
     Validity validity = Validity::None;
 };
 
-enum class AccountType { MSA, Offline };
+// Yggdrasil: an account on a skin server that speaks the authlib-injector API (Ely.by by default).
+// The game gets its skins, capes and multiplayer sign-in from that server instead of Mojang.
+enum class AccountType { MSA, Offline, Yggdrasil };
 
 enum class AccountState { Unchecked, Offline, Working, Online, Disabled, Errored, Expired, Gone };
 
@@ -103,6 +105,16 @@ struct AccountData {
     QString profileName() const;
 
     QString lastError() const;
+
+    //! Yggdrasil accounts: the server's API root, e.g. https://authserver.ely.by/api/authlib-injector
+    QString yggdrasilServer;
+    //! Yggdrasil accounts: the server's API metadata, base64, handed to authlib-injector so it skips a lookup
+    QString yggdrasilMetadata;
+    //! Short display name of the skin server ("Ely.by", "LittleSkin" or its host name)
+    QString serverName() const;
+    //! The name the player signs in with (email or username), kept so a new sign-in can be prefilled
+    QString loginName() const;
+    QString clientToken() const;
 
     AccountType type = AccountType::MSA;
 
@@ -121,4 +133,6 @@ struct AccountData {
     QString errorString;
     QNetworkReply::NetworkError networkError = QNetworkReply::NoError;
     AccountState accountState = AccountState::Unchecked;
+    //! Yggdrasil sign-in was refused until the authenticator app's code is added
+    bool needsOneTimeCode = false;
 };

@@ -31,6 +31,7 @@ Coming from another launcher? EMC finds Prism Launcher, PolyMC, MultiMC and Ulti
 ## What it does
 
 - **Play right away.** Sign in with Microsoft, or play offline with just a name. A first-run wizard sets everything up, and one click installs Minecraft.
+- **Custom skins with Ely.by.** Sign in with a free [Ely.by](https://ely.by) account and your skin and cape show in game, and to other players on servers that use Ely.by. Accounts that use two-factor sign-in get a code prompt. Other skin servers that support authlib-injector (LittleSkin, Drasl, your own) work too. EMC downloads and checks [authlib-injector](https://github.com/yushijinhun/authlib-injector) for you and never saves your password.
 - **Mods and modpacks.** Browse Modrinth and CurseForge, install mods, resource packs, shaders and whole modpacks, and keep them updated.
 - **Servers.** Create a Java or Bedrock server (or both together through Geyser), or add one you already have.
   - Vanilla, Paper, Purpur, Folia, Fabric, Forge, NeoForge and Arclight.

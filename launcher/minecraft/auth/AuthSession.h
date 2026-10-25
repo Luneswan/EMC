@@ -25,6 +25,11 @@ struct AuthSession {
     QString user_type;
     // the actual launch mode for this session
     LaunchMode launchMode;
+    // skin server accounts: the authlib-injector API root and its metadata (base64). Empty for everything else.
+    QString yggdrasil_server;
+    QString yggdrasil_metadata;
+    // set at launch: the authlib-injector agent jar that points the game at that server
+    QString authlib_injector_jar;
 };
 
 using AuthSessionPtr = std::shared_ptr<AuthSession>;

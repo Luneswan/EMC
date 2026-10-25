@@ -11,13 +11,14 @@
 #include "minecraft/auth/steps/MinecraftProfileStep.h"
 #include "minecraft/auth/steps/XboxAuthorizationStep.h"
 #include "minecraft/auth/steps/XboxUserStep.h"
+#include "minecraft/auth/steps/YggdrasilStep.h"
 #include "tasks/Task.h"
 
 #include "AuthFlow.h"
 
 #include <Application.h>
 
-AuthFlow::AuthFlow(AccountData* data, Action action) : Task(), m_data(data)
+AuthFlow::AuthFlow(AccountData* data, Action action, std::optional<QString> password) : Task(), m_data(data)
 {
     if (data->type == AccountType::MSA) {
         if (action == Action::DeviceCode) {
@@ -35,6 +36,11 @@ AuthFlow::AuthFlow(AccountData* data, Action action) : Task(), m_data(data)
         m_steps.append(makeShared<LauncherLoginStep>(m_data));
         m_steps.append(makeShared<EntitlementsStep>(m_data));
         m_steps.append(makeShared<MinecraftProfileStep>(m_data));
+        m_steps.append(makeShared<GetSkinStep>(m_data));
+    } else if (data->type == AccountType::Yggdrasil) {
+        m_steps.append(makeShared<YggdrasilStep>(m_data, action == Action::Login ? password : std::nullopt));
+        m_steps.append(makeShared<YggdrasilProfileStep>(m_data));
+        m_steps.append(makeShared<YggdrasilMetadataStep>(m_data));
         m_steps.append(makeShared<GetSkinStep>(m_data));
     }
     changeState(AccountTaskState::STATE_CREATED);

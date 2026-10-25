@@ -38,6 +38,7 @@
 #include "ui/dialogs/skins/SkinManageDialog.h"
 #include "ui_AccountListPage.h"
 
+#include <QDesktopServices>
 #include <QItemSelectionModel>
 #include <QMenu>
 #include <QPushButton>
@@ -47,6 +48,7 @@
 #include "ui/dialogs/ChooseOfflineNameDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/MSALoginDialog.h"
+#include "ui/dialogs/SkinServerLoginDialog.h"
 
 #include "Application.h"
 
@@ -131,6 +133,16 @@ void AccountListPage::on_actionAddMicrosoft_triggered()
 {
     auto account = MSALoginDialog::newAccount(this);
     if (account) {
+        m_accounts->addAccount(account);
+        if (m_accounts->count() == 1) {
+            m_accounts->setDefaultAccount(account);
+        }
+    }
+}
+
+void AccountListPage::on_actionAddEly_triggered()
+{
+    if (auto account = SkinServerLoginDialog::newAccount(this)) {
         m_accounts->addAccount(account);
         if (m_accounts->count() == 1) {
             m_accounts->setDefaultAccount(account);
@@ -236,6 +248,12 @@ void AccountListPage::on_actionManageSkins_triggered()
     if (selection.size() > 0) {
         QModelIndex selected = selection.first();
         MinecraftAccountPtr account = selected.data(AccountList::PointerRole).value<MinecraftAccountPtr>();
+        if (account->isSkinServerAccount()) {
+            // Skins on Ely.by and other skin servers are changed on their website.
+            QDesktopServices::openUrl(QUrl(account->accountData()->serverName() == "Ely.by" ? QString("https://ely.by/skins")
+                                                                                             : account->accountData()->yggdrasilServer));
+            return;
+        }
         SkinManageDialog dialog(this, account);
         dialog.exec();
     }

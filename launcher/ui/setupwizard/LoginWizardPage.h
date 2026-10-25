@@ -1,4 +1,6 @@
 #pragma once
+
+#include <QPushButton>
 #include <QWidget>
 #include "BaseWizardPage.h"
 #include "minecraft/auth/MinecraftAccount.h"
@@ -22,7 +24,9 @@ class LoginWizardPage : public BaseWizardPage {
 
    private:
     void addOfflineAccount();
+    void addElyAccount();
     void accountAdded(const MinecraftAccountPtr& account);
 
     Ui::LoginWizardPage* ui;
+    QPushButton* m_elyButton = nullptr;
 };

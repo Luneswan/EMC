@@ -113,7 +113,7 @@ QToolButton:pressed { background: rgba(255,255,255,0.10); }
 QToolButton:checked { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.14); }
 QToolButton:disabled { color: #5A5A5F; }
 QToolButton::menu-indicator { image: none; width: 0px; }
-QToolButton::menu-button { border: none; width: 14px; }
+QToolButton::menu-button { border: none; width: 14px; } /* EMC: room for the split arrow, so the label never runs under it */ QToolButton[popupMode="1"] { padding-right: 24px; }
 
 /* Push buttons: brushed metal. */
 QPushButton {
@@ -125,7 +125,7 @@ QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #
 QPushButton:pressed { background: #18181A; border-top-color: rgba(255,255,255,0.08); }
 QPushButton:disabled { color: #5A5A5F; background: #141416; border-color: rgba(255,255,255,0.05); }
 QPushButton:default {
-  color: #0B0B0C; font-weight: 600; border: 1px solid #FFFFFF;
+  color: #0B0B0C; border: 1px solid #FFFFFF;
   background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #D6D7DC);
 }
 QPushButton:default:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #E6E7EB); }

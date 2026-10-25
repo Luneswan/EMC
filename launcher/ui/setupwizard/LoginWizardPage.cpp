@@ -2,6 +2,7 @@
 #include "minecraft/auth/AccountList.h"
 #include "ui/dialogs/ChooseOfflineNameDialog.h"
 #include "ui/dialogs/MSALoginDialog.h"
+#include "ui/dialogs/SkinServerLoginDialog.h"
 #include "ui_LoginWizardPage.h"
 
 #include "Application.h"
@@ -13,6 +14,17 @@ LoginWizardPage::LoginWizardPage(QWidget* parent) : BaseWizardPage(parent), ui(n
     ui->logoLabel->setPixmap(APPLICATION->logo().pixmap(QSize(72, 72), devicePixelRatioF()));
     ui->verticalLayout->insertSpacing(ui->verticalLayout->indexOf(ui->pushButton), 10);
     connect(ui->offlineButton, &QPushButton::clicked, this, &LoginWizardPage::addOfflineAccount);
+
+    // Ely.by: a free account with a custom skin, between the Microsoft and offline choices.
+    m_elyButton = new QPushButton(tr("Sign in with Ely.by"), this);
+    m_elyButton->setToolTip(tr("Free account with your own skin and cape"));
+    m_elyButton->setAutoDefault(false);
+    m_elyButton->setMinimumSize(ui->offlineButton->minimumSize());
+    m_elyButton->setMaximumSize(ui->offlineButton->maximumSize());
+    m_elyButton->setSizePolicy(ui->offlineButton->sizePolicy());
+    ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->offlineButton), m_elyButton, 0,
+                                     ui->verticalLayout->itemAt(ui->verticalLayout->indexOf(ui->offlineButton))->alignment());
+    connect(m_elyButton, &QPushButton::clicked, this, &LoginWizardPage::addElyAccount);
 }
 
 LoginWizardPage::~LoginWizardPage()
@@ -30,6 +42,7 @@ bool LoginWizardPage::validatePage()
 void LoginWizardPage::retranslate()
 {
     ui->retranslateUi(this);
+    m_elyButton->setText(tr("Sign in with Ely.by"));
 }
 
 void LoginWizardPage::on_pushButton_clicked()
@@ -38,6 +51,13 @@ void LoginWizardPage::on_pushButton_clicked()
     auto account = MSALoginDialog::newAccount(nullptr);
     wizard()->show();
     if (account) {
+        accountAdded(account);
+    }
+}
+
+void LoginWizardPage::addElyAccount()
+{
+    if (auto account = SkinServerLoginDialog::newAccount(this)) {
         accountAdded(account);
     }
 }

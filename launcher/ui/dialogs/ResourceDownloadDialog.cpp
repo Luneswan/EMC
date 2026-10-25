@@ -18,6 +18,8 @@
  */
 
 #include "ResourceDownloadDialog.h"
+
+#include <QScreen>
 #include <QList>
 
 #include <QPushButton>
@@ -69,7 +71,15 @@ ResourceDownloadDialog::ResourceDownloadDialog(QWidget* parent,
 {
     setObjectName(QStringLiteral("ResourceDownloadDialog"));
 
-    resize(static_cast<int>(std::max(0.5 * parent->width(), 400.0)), static_cast<int>(std::max(0.75 * parent->height(), 400.0)));
+    // Big enough that project names, the version picker and the buttons all fit; the old 50% of the parent left the
+    // list a few words wide and the buttons squeezed. Saved geometry still wins, but never below the minimum.
+    setMinimumSize(760, 520);
+    {
+        const QRect screen = parent->screen() ? parent->screen()->availableGeometry() : QRect(0, 0, 1280, 800);
+        const int w = std::min(std::max(static_cast<int>(0.85 * parent->width()), 980), static_cast<int>(0.92 * screen.width()));
+        const int h = std::min(std::max(static_cast<int>(0.85 * parent->height()), 660), static_cast<int>(0.9 * screen.height()));
+        resize(std::max(w, 760), std::max(h, 520));
+    }
 
     setWindowIcon(QIcon::fromTheme("new"));
 

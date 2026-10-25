@@ -87,6 +87,9 @@ class MinecraftAccount : public QObject, public Usable {
 
     static MinecraftAccountPtr createOffline(const QString& username);
 
+    //! An account on an authlib-injector skin server. `server` is the API root; `loginName` the email or username.
+    static MinecraftAccountPtr createYggdrasil(const QString& server, const QString& loginName);
+
     static MinecraftAccountPtr loadFromJsonV3(const QJsonObject& json);
 
     static QUuid uuidFromUsername(QString username);
@@ -96,6 +99,8 @@ class MinecraftAccount : public QObject, public Usable {
 
    public: /* manipulation */
     shared_qobject_ptr<AuthFlow> login(bool useDeviceCode = false);
+    //! Skin server accounts: sign in with a password (add ":code" for two-factor). The password is not stored.
+    shared_qobject_ptr<AuthFlow> loginWithPassword(const QString& password);
 
     shared_qobject_ptr<AuthFlow> refresh();
 
@@ -116,14 +121,23 @@ class MinecraftAccount : public QObject, public Usable {
 
     AccountType accountType() const noexcept { return data.type; }
 
-    bool ownsMinecraft() const { return data.type != AccountType::Offline && data.minecraftEntitlement.ownsMinecraft; }
+    bool ownsMinecraft() const
+    {
+        return data.type == AccountType::Yggdrasil || (data.type != AccountType::Offline && data.minecraftEntitlement.ownsMinecraft);
+    }
+    bool isSkinServerAccount() const { return data.type == AccountType::Yggdrasil; }
+    //! "Microsoft", "Offline", or the skin server's name such as "Ely.by"
+    QString typeLabel() const;
 
     bool hasProfile() const { return data.profileId().size() != 0; }
 
     QString typeString() const
     {
         switch (data.type) {
-            case AccountType::MSA: {
+            case AccountType::MSA:
+            case AccountType::Yggdrasil: {
+                // Skin server accounts must say "msa" too: with "mojang", 1.19.3 to 1.21.8 never set the profile key and
+                // servers with enforce-secure-profile turn the player away.
                 return "msa";
             } break;
             case AccountType::Offline: {

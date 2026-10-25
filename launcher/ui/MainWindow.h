@@ -245,6 +245,7 @@ class MainWindow : public QMainWindow {
    private:
     Ui::MainWindow* ui;
     QAction* m_updateAction = nullptr;
+    QAction* m_addElyAction = nullptr;
     int m_toolBarTextWidth = -1;  // main toolbar width with labels; -1 = measure again
     // these are managed by Qt's memory management model!
     InstanceView* view = nullptr;

@@ -71,8 +71,10 @@ void NetJob::executeNextSubTask()
     if (isRunning() && m_queue.isEmpty() && m_doing.isEmpty() && !m_failed.isEmpty() && m_try < 3) {
         m_try += 1;
         m_failed.removeIf([this](QHash<Task*, Task::Ptr>::iterator task) {
-            // there is no point in retying on 404 Not Found
-            if (static_cast<Net::Request*>(task->get())->replyStatusCode() == 404) {
+            // A client error (400-499) gives the same answer every time: retrying a 404, or a refused sign-in, only wastes
+            // time and resends the password. Timeouts (408) and rate limits (429) can still succeed later.
+            const int status = static_cast<Net::Request*>(task->get())->replyStatusCode();
+            if (status >= 400 && status < 500 && status != 408 && status != 429) {
                 return false;
             }
             m_done.remove(task->get());

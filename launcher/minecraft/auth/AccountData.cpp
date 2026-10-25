@@ -38,6 +38,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QUrl>
 #include <QUuid>
 
 namespace {
@@ -291,6 +292,14 @@ bool AccountData::resumeStateFromV3(QJsonObject data)
         type = AccountType::MSA;
     } else if (typeS == "Offline") {
         type = AccountType::Offline;
+    } else if (typeS == "Yggdrasil") {
+        type = AccountType::Yggdrasil;
+        yggdrasilServer = data.value("server").toString();
+        yggdrasilMetadata = data.value("serverMetadata").toString();
+        if (yggdrasilServer.isEmpty()) {
+            qWarning() << "Failed to parse account data: skin server is missing.";
+            return false;
+        }
     } else {
         qWarning() << "Failed to parse account data: type is not recognized.";
         return false;
@@ -335,6 +344,10 @@ QJsonObject AccountData::saveState() const
         tokenToJSONV3(output, mojangservicesToken, "xrp-mc");
     } else if (type == AccountType::Offline) {
         output["type"] = "Offline";
+    } else if (type == AccountType::Yggdrasil) {
+        output["type"] = "Yggdrasil";
+        output["server"] = yggdrasilServer;
+        output["serverMetadata"] = yggdrasilMetadata;
     }
 
     tokenToJSONV3(output, yggdrasilToken, "ygg");
@@ -365,4 +378,24 @@ QString AccountData::profileName() const
 QString AccountData::lastError() const
 {
     return errorString;
+}
+
+QString AccountData::serverName() const
+{
+    const QString host = QUrl(yggdrasilServer).host();
+    if (host == "ely.by" || host.endsWith(".ely.by"))
+        return "Ely.by";
+    if (host == "littleskin.cn" || host.endsWith(".littleskin.cn"))
+        return "LittleSkin";
+    return host;
+}
+
+QString AccountData::loginName() const
+{
+    return yggdrasilToken.extra.value("userName").toString();
+}
+
+QString AccountData::clientToken() const
+{
+    return yggdrasilToken.extra.value("clientToken").toString();
 }

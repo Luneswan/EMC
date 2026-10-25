@@ -308,7 +308,7 @@ void ResourcePage::updateSelectionButton()
 {
     if (!isOpened || m_selectedVersionIndex < 0) {
         m_ui->resourceSelectionButton->setEnabled(false);
-        m_ui->resourceSelectionButton->setText(tr("Cannot select invalid version :("));
+        m_ui->resourceSelectionButton->setText(tr("Pick a version first"));
         return;
     }
 
@@ -316,7 +316,7 @@ void ResourcePage::updateSelectionButton()
     if (auto currentPack = getCurrentPack(); currentPack) {
         if (currentPack->versionsLoaded && currentPack->versions.empty()) {
             m_ui->resourceSelectionButton->setEnabled(false);
-            m_ui->resourceSelectionButton->setText(tr("Cannot select invalid version :("));
+            m_ui->resourceSelectionButton->setText(tr("Pick a version first"));
             qWarning() << tr("No version available for the selected pack");
         } else if (!currentPack->isVersionSelected(m_selectedVersionIndex)) {
             m_ui->resourceSelectionButton->setText(tr("Select %1 for download").arg(resourceString()));
@@ -326,7 +326,7 @@ void ResourcePage::updateSelectionButton()
     } else {
         qWarning() << "Tried to update the selected button but there is not a pack selected";
         m_ui->resourceSelectionButton->setEnabled(false);
-        m_ui->resourceSelectionButton->setText(tr("Cannot select invalid version :("));
+        m_ui->resourceSelectionButton->setText(tr("Pick a version first"));
     }
 }
 
@@ -422,7 +422,7 @@ void ResourcePage::versionListUpdated(const QModelIndex& index)
         }
         if (m_ui->versionSelectionBox->count() == 0) {
             m_ui->versionSelectionBox->addItem(tr("No valid version found."), QVariant(-1));
-            m_ui->resourceSelectionButton->setText(tr("Cannot select invalid version :("));
+            m_ui->resourceSelectionButton->setText(tr("Pick a version first"));
         }
 
         m_selectedVersionIndex = m_ui->versionSelectionBox->currentData().toInt();

@@ -60,6 +60,7 @@
 #include "launch/steps/TextPrint.h"
 #include "tasks/Task.h"
 #include "ui/dialogs/ChooseOfflineNameDialog.h"
+#include "ui/dialogs/SkinServerLoginDialog.h"
 
 #include <QNetworkInterface>
 #include <algorithm>
@@ -367,7 +368,23 @@ bool LaunchController::reauthenticateAccount(const MinecraftAccountPtr& account,
     if (button == QMessageBox::StandardButton::Yes) {
         auto* accounts = APPLICATION->accounts();
         const bool isDefault = accounts->defaultAccount() == account;
-        if (account->accountType() == AccountType::MSA) {
+        if (account->isSkinServerAccount()) {
+            // Sign in again on the same skin server, with the login name filled in.
+            auto newAccount = SkinServerLoginDialog::newAccount(m_parentWidget, account->accountData()->yggdrasilServer,
+                                                                account->accountData()->loginName(), reason + ".");
+            if (newAccount != nullptr) {
+                accounts->removeAccount(accounts->index(accounts->findAccountByProfileId(account->profileId())));
+                accounts->addAccount(newAccount);
+                if (isDefault) {
+                    accounts->setDefaultAccount(newAccount);
+                }
+                if (m_accountToUse == account) {
+                    m_accountToUse = nullptr;
+                    decideAccount();
+                }
+                return true;
+            }
+        } else if (account->accountType() == AccountType::MSA) {
             auto newAccount = MSALoginDialog::newAccount(m_parentWidget);
 
             if (newAccount != nullptr) {

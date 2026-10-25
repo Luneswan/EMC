@@ -4,6 +4,7 @@
 #include <QList>
 #include <QObject>
 #include <QSet>
+#include <optional>
 
 #include "minecraft/auth/AccountData.h"
 #include "minecraft/auth/AuthStep.h"
@@ -15,7 +16,7 @@ class AuthFlow : public Task {
    public:
     enum class Action { Refresh, Login, DeviceCode };
 
-    explicit AuthFlow(AccountData* data, Action action = Action::Refresh);
+    explicit AuthFlow(AccountData* data, Action action = Action::Refresh, std::optional<QString> password = std::nullopt);
     virtual ~AuthFlow() = default;
 
     void executeTask() override;

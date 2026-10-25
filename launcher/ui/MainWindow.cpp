@@ -112,6 +112,7 @@
 #include "ui/dialogs/CreateShortcutDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "updater/EmcUpdater.h"
+#include "ui/dialogs/SkinServerLoginDialog.h"
 #include "server/ServerList.h"
 #include "server/ServerTray.h"
 #include "ui/dialogs/ExportInstanceDialog.h"
@@ -819,8 +820,11 @@ void MainWindow::repopulateAccountsMenu()
     auto accounts = APPLICATION->accounts();
     MinecraftAccountPtr defaultAccount = accounts->defaultAccount();
 
-    bool canChangeSkin = defaultAccount && (defaultAccount->accountType() == AccountType::MSA) && !defaultAccount->isActive();
+    bool canChangeSkin = defaultAccount && (defaultAccount->accountType() != AccountType::Offline) && !defaultAccount->isActive();
     ui->actionManageSkins->setEnabled(canChangeSkin);
+    ui->actionManageSkins->setText(defaultAccount && defaultAccount->isSkinServerAccount()
+                                       ? tr("Change Skin on %1…").arg(defaultAccount->accountData()->serverName())
+                                       : tr("Manage Skins"));
 
     QString active_profileId = "";
     if (defaultAccount) {
@@ -878,6 +882,18 @@ void MainWindow::repopulateAccountsMenu()
 
     ui->accountsMenu->addSeparator();
     ui->accountsMenu->addAction(ui->actionManageSkins);
+    if (!m_addElyAction) {
+        m_addElyAction = new QAction(tr("Add Ely.by Account…"), this);
+        m_addElyAction->setToolTip(tr("Sign in with a free Ely.by account for your own skin and cape"));
+        connect(m_addElyAction, &QAction::triggered, this, [this] {
+            if (auto account = SkinServerLoginDialog::newAccount(this)) {
+                auto* accounts = APPLICATION->accounts();
+                accounts->addAccount(account);
+                accounts->setDefaultAccount(account);
+            }
+        });
+    }
+    ui->accountsMenu->addAction(m_addElyAction);
     ui->accountsMenu->addAction(ui->actionManageAccounts);
 
     accountsButtonMenu->addActions(ui->accountsMenu->actions());
@@ -1678,6 +1694,12 @@ void MainWindow::on_actionManageSkins_triggered()
 {
     auto account = APPLICATION->accounts()->defaultAccount();
 
+    if (account && account->isSkinServerAccount()) {
+        // Skins on Ely.by and other skin servers are changed on their website.
+        QDesktopServices::openUrl(
+            QUrl(account->accountData()->serverName() == "Ely.by" ? QString("https://ely.by/skins") : account->accountData()->yggdrasilServer));
+        return;
+    }
     if (account && (account->accountType() == AccountType::MSA) && !account->isActive()) {
         SkinManageDialog dialog(this, account);
         dialog.exec();

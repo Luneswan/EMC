@@ -50,7 +50,7 @@
    <item>
     <widget class="QLabel" name="label_2">
      <property name="text">
-      <string>Use your Microsoft account to play online and on servers, or play offline with any name.</string>
+      <string>Use your Microsoft account to play online and on servers, sign in with Ely.by for a free custom skin, or play offline with any name.</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>

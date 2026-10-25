@@ -89,6 +89,29 @@ MinecraftAccountPtr MinecraftAccount::createOffline(const QString& username)
     return account;
 }
 
+MinecraftAccountPtr MinecraftAccount::createYggdrasil(const QString& server, const QString& loginName)
+{
+    auto account = makeShared<MinecraftAccount>();
+    account->data.type = AccountType::Yggdrasil;
+    account->data.yggdrasilServer = server;
+    account->data.yggdrasilToken.extra["userName"] = loginName;
+    account->data.yggdrasilToken.extra["clientToken"] = QUuid::createUuid().toString(QUuid::Id128);
+    return account;
+}
+
+QString MinecraftAccount::typeLabel() const
+{
+    switch (data.type) {
+        case AccountType::MSA:
+            return tr("Microsoft", "Account type");
+        case AccountType::Offline:
+            return tr("Offline", "Account type");
+        case AccountType::Yggdrasil:
+            return data.serverName();
+    }
+    return {};
+}
+
 QJsonObject MinecraftAccount::saveToJson() const
 {
     return data.saveState();
@@ -118,6 +141,18 @@ shared_qobject_ptr<AuthFlow> MinecraftAccount::login(bool useDeviceCode)
     Q_ASSERT(m_currentTask.get() == nullptr);
 
     m_currentTask.reset(new AuthFlow(&data, useDeviceCode ? AuthFlow::Action::DeviceCode : AuthFlow::Action::Login));
+    connect(m_currentTask.get(), &Task::succeeded, this, &MinecraftAccount::authSucceeded);
+    connect(m_currentTask.get(), &Task::failed, this, &MinecraftAccount::authFailed);
+    connect(m_currentTask.get(), &Task::aborted, this, [this] { authFailed(tr("Aborted")); });
+    emit activityChanged(true);
+    return m_currentTask;
+}
+
+shared_qobject_ptr<AuthFlow> MinecraftAccount::loginWithPassword(const QString& password)
+{
+    Q_ASSERT(m_currentTask.get() == nullptr);
+
+    m_currentTask.reset(new AuthFlow(&data, AuthFlow::Action::Login, password));
     connect(m_currentTask.get(), &Task::succeeded, this, &MinecraftAccount::authSucceeded);
     connect(m_currentTask.get(), &Task::failed, this, &MinecraftAccount::authFailed);
     connect(m_currentTask.get(), &Task::aborted, this, [this] { authFailed(tr("Aborted")); });
@@ -251,6 +286,10 @@ void MinecraftAccount::fillSession(AuthSessionPtr session)
         session->uuid = uuidFromUsername(session->player_name).toString(QUuid::Id128);
     // 'legacy' or 'mojang', depending on account type
     session->user_type = typeString();
+    if (data.type == AccountType::Yggdrasil) {
+        session->yggdrasil_server = data.yggdrasilServer;
+        session->yggdrasil_metadata = data.yggdrasilMetadata;
+    }
     if (!session->access_token.isEmpty()) {
         session->session = "token:" + data.accessToken() + ":" + data.profileId();
     } else {
