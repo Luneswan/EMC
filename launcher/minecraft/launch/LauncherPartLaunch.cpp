@@ -106,8 +106,13 @@ void LauncherPartLaunch::executeTask()
         args << "-Dauthlibinjector.side=client";
         if (!m_session->yggdrasil_metadata.isEmpty())
             args << "-Dauthlibinjector.yggdrasil.prefetched=" + m_session->yggdrasil_metadata;
-        emit logLine("Skins and multiplayer sign-in go through " + m_session->yggdrasil_server + " (authlib-injector)\n",
-                     MessageLevel::Launcher);
+        if (m_session->yggdrasil_optional)
+            emit logLine("Wearing the Ely.by skin of " + m_session->offline_skin_name + ", served by EMC at " + m_session->yggdrasil_server +
+                             " (authlib-injector)\n",
+                         MessageLevel::Launcher);
+        else
+            emit logLine("Skins and multiplayer sign-in go through " + m_session->yggdrasil_server + " (authlib-injector)\n",
+                         MessageLevel::Launcher);
     }
 
     auto javaPath = FS::ResolveExecutable(instance->settings()->get("JavaPath").toString());

@@ -116,6 +116,11 @@ struct AccountData {
     QString loginName() const;
     QString clientToken() const;
 
+    //! Offline accounts: wear the Ely.by skin of offlineSkinName (or of the player name when that is empty)
+    bool offlineSkin = true;
+    QString offlineSkinName;
+    QString offlineSkinLookupName() const { return offlineSkinName.isEmpty() ? profileName() : offlineSkinName; }
+
     AccountType type = AccountType::MSA;
 
     QString msaClientID;

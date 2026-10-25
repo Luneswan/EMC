@@ -73,7 +73,9 @@ void EnsureAuthlibInjector::onLatestDone(QByteArray* response)
         return;
     }
 
-    emit logLine(tr("Downloading authlib-injector %1 for %2 skins...").arg(version, m_session->yggdrasil_server), MessageLevel::Launcher);
+    emit logLine(tr("Downloading authlib-injector %1 for %2 skins...")
+                     .arg(version, m_session->yggdrasil_optional ? QStringLiteral("Ely.by") : QUrl(m_session->yggdrasil_server).host()),
+                 MessageLevel::Launcher);
     const QString part = jar + ".part";
     auto download = Net::Request::makeFile(url, part);
     download->addValidator(new Net::ChecksumValidator(QCryptographicHash::Sha256, sha256));
@@ -108,6 +110,14 @@ void EnsureAuthlibInjector::useCachedOrFail(const QString& reason)
         emit logLine(tr("Couldn't check for a newer authlib-injector (%1). Using the one already downloaded.").arg(reason),
                      MessageLevel::Warning);
         succeedWith(jar);
+        return;
+    }
+    if (m_session->yggdrasil_optional) {
+        // an offline skin is a nicety: start the game with the default skin instead
+        emit logLine(tr("Couldn't download authlib-injector (%1), so you play with the default skin.").arg(reason), MessageLevel::Warning);
+        m_session->yggdrasil_server.clear();
+        m_session->yggdrasil_metadata.clear();
+        emitSucceeded();
         return;
     }
     emit logLine(tr("Couldn't download authlib-injector (%1). Skin server accounts need it to start the game.").arg(reason),

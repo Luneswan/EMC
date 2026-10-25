@@ -112,6 +112,7 @@
 #include "ui/dialogs/CreateShortcutDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "updater/EmcUpdater.h"
+#include "ui/dialogs/OfflineSkinDialog.h"
 #include "ui/dialogs/SkinServerLoginDialog.h"
 #include "server/ServerList.h"
 #include "server/ServerTray.h"
@@ -820,7 +821,7 @@ void MainWindow::repopulateAccountsMenu()
     auto accounts = APPLICATION->accounts();
     MinecraftAccountPtr defaultAccount = accounts->defaultAccount();
 
-    bool canChangeSkin = defaultAccount && (defaultAccount->accountType() != AccountType::Offline) && !defaultAccount->isActive();
+    bool canChangeSkin = defaultAccount && !defaultAccount->isActive();
     ui->actionManageSkins->setEnabled(canChangeSkin);
     ui->actionManageSkins->setText(defaultAccount && defaultAccount->isSkinServerAccount()
                                        ? tr("Change Skin on %1…").arg(defaultAccount->accountData()->serverName())
@@ -1698,6 +1699,11 @@ void MainWindow::on_actionManageSkins_triggered()
         // Skins on Ely.by and other skin servers are changed on their website.
         QDesktopServices::openUrl(
             QUrl(account->accountData()->serverName() == "Ely.by" ? QString("https://ely.by/skins") : account->accountData()->yggdrasilServer));
+        return;
+    }
+    if (account && account->accountType() == AccountType::Offline) {
+        OfflineSkinDialog dialog(this, account);
+        dialog.exec();
         return;
     }
     if (account && (account->accountType() == AccountType::MSA) && !account->isActive()) {

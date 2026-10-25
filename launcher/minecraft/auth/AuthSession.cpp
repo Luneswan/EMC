@@ -26,6 +26,7 @@ bool AuthSession::MakeOffline(QString offline_playername)
     // an offline session never talks to a skin server
     yggdrasil_server.clear();
     yggdrasil_metadata.clear();
+    offline_skin_name.clear();
     return true;
 }
 

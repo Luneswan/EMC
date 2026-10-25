@@ -292,6 +292,8 @@ bool AccountData::resumeStateFromV3(QJsonObject data)
         type = AccountType::MSA;
     } else if (typeS == "Offline") {
         type = AccountType::Offline;
+        offlineSkin = data.value("elySkin").toBool(true);
+        offlineSkinName = data.value("elySkinName").toString();
     } else if (typeS == "Yggdrasil") {
         type = AccountType::Yggdrasil;
         yggdrasilServer = data.value("server").toString();
@@ -344,6 +346,9 @@ QJsonObject AccountData::saveState() const
         tokenToJSONV3(output, mojangservicesToken, "xrp-mc");
     } else if (type == AccountType::Offline) {
         output["type"] = "Offline";
+        output["elySkin"] = offlineSkin;
+        if (!offlineSkinName.isEmpty())
+            output["elySkinName"] = offlineSkinName;
     } else if (type == AccountType::Yggdrasil) {
         output["type"] = "Yggdrasil";
         output["server"] = yggdrasilServer;

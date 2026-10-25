@@ -1,5 +1,6 @@
 #include "LoginWizardPage.h"
 #include "minecraft/auth/AccountList.h"
+#include "minecraft/auth/ElySkinLookup.h"
 #include "ui/dialogs/ChooseOfflineNameDialog.h"
 #include "ui/dialogs/MSALoginDialog.h"
 #include "ui/dialogs/SkinServerLoginDialog.h"
@@ -64,7 +65,8 @@ void LoginWizardPage::addElyAccount()
 
 void LoginWizardPage::addOfflineAccount()
 {
-    ChooseOfflineNameDialog dialog(tr("Choose the name you will play under. Offline accounts work in singleplayer and on offline-mode servers."),
+    ChooseOfflineNameDialog dialog(tr("Choose the name you will play under. Offline accounts work in singleplayer and on offline-mode servers. "
+                                     "If an Ely.by player has this name you wear their skin; pick another in Manage Skins."),
                                    this);
     if (dialog.exec() != QDialog::Accepted) {
         return;
@@ -72,6 +74,7 @@ void LoginWizardPage::addOfflineAccount()
     if (const MinecraftAccountPtr account = MinecraftAccount::createOffline(dialog.getUsername())) {
         account->login()->start();  // completes immediately for offline accounts
         accountAdded(account);
+        ElySkinLookup::refreshOfflineFace(account);
     }
 }
 

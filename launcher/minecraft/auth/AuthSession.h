@@ -30,6 +30,10 @@ struct AuthSession {
     QString yggdrasil_metadata;
     // set at launch: the authlib-injector agent jar that points the game at that server
     QString authlib_injector_jar;
+    // offline accounts: the Ely.by name whose skin to wear (empty: the default skin)
+    QString offline_skin_name;
+    // the skin server is EMC's own one for an offline skin: if it cannot be set up the game starts without it
+    bool yggdrasil_optional = false;
 };
 
 using AuthSessionPtr = std::shared_ptr<AuthSession>;

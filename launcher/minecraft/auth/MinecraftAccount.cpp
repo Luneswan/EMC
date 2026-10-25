@@ -290,6 +290,8 @@ void MinecraftAccount::fillSession(AuthSessionPtr session)
         session->yggdrasil_server = data.yggdrasilServer;
         session->yggdrasil_metadata = data.yggdrasilMetadata;
     }
+    if (data.type == AccountType::Offline && data.offlineSkin)
+        session->offline_skin_name = data.offlineSkinLookupName();
     if (!session->access_token.isEmpty()) {
         session->session = "token:" + data.accessToken() + ":" + data.profileId();
     } else {

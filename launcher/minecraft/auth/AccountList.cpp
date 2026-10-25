@@ -35,6 +35,7 @@
 
 #include "AccountList.h"
 #include "AccountData.h"
+#include "ElySkinLookup.h"
 #include "tasks/Task.h"
 
 #include <QDir>
@@ -235,6 +236,15 @@ void AccountList::setDefaultAccount(MinecraftAccountPtr newAccount)
 
 void AccountList::accountChanged()
 {
+    // repaint the row (its face may be new), then save
+    if (auto* account = qobject_cast<MinecraftAccount*>(sender())) {
+        for (int i = 0; i < count(); i++) {
+            if (at(i).get() == account) {
+                emit dataChanged(index(i), index(i, columnCount(QModelIndex()) - 1));
+                break;
+            }
+        }
+    }
     // the list changed. there is no doubt.
     onListChanged();
 }
@@ -498,6 +508,11 @@ bool AccountList::loadV3(QJsonObject& root)
         }
     }
     endResetModel();
+    // Offline accounts show the face of the Ely.by skin they wear; pick up skins changed on Ely.by since last time.
+    QTimer::singleShot(3000, this, [this] {
+        for (const auto& account : m_accounts)
+            ElySkinLookup::refreshOfflineFace(account);
+    });
     return true;
 }
 

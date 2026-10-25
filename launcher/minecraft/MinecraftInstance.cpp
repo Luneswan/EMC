@@ -62,6 +62,7 @@
 #include "minecraft/launch/EnsureAvailableMemory.h"
 #include "minecraft/launch/EnsureAuthlibInjector.h"
 #include "minecraft/launch/EnsureOfflineLibraries.h"
+#include "minecraft/launch/StartOfflineSkinServer.h"
 #include "minecraft/launch/ExtractNatives.h"
 #include "minecraft/launch/LauncherPartLaunch.h"
 #include "minecraft/launch/ModMinecraftJar.h"
@@ -1223,6 +1224,7 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
     // if we aren't in offline mode
     if (session->launchMode != LaunchMode::Offline) {
         process->appendStep(makeShared<ClaimAccount>(pptr, session));
+        process->appendStep(makeShared<StartOfflineSkinServer>(pptr, session));
         process->appendStep(makeShared<EnsureAuthlibInjector>(pptr, session));
         for (auto t : createUpdateTask()) {
             process->appendStep(makeShared<TaskStepWrapper>(pptr, t));

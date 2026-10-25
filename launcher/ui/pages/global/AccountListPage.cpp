@@ -35,6 +35,8 @@
  */
 
 #include "AccountListPage.h"
+#include "minecraft/auth/ElySkinLookup.h"
+#include "ui/dialogs/OfflineSkinDialog.h"
 #include "ui/dialogs/skins/SkinManageDialog.h"
 #include "ui_AccountListPage.h"
 
@@ -152,7 +154,7 @@ void AccountListPage::on_actionAddEly_triggered()
 
 void AccountListPage::on_actionAddOffline_triggered()
 {
-    ChooseOfflineNameDialog dialog(tr("Please enter your desired username to add your offline account."), this);
+    ChooseOfflineNameDialog dialog(tr("Choose the name you will play under. If an Ely.by player has this name you wear their skin; pick another in Manage Skins."), this);
     if (dialog.exec() != QDialog::Accepted) {
         return;
     }
@@ -160,6 +162,7 @@ void AccountListPage::on_actionAddOffline_triggered()
     if (const MinecraftAccountPtr account = MinecraftAccount::createOffline(dialog.getUsername())) {
         account->login()->start();  // The task will complete here.
         m_accounts->addAccount(account);
+        ElySkinLookup::refreshOfflineFace(account);
         if (m_accounts->count() == 1) {
             m_accounts->setDefaultAccount(account);
         }
@@ -227,7 +230,7 @@ void AccountListPage::updateButtonStates()
     }
     ui->actionRemove->setEnabled(accountIsReady);
     ui->actionSetDefault->setEnabled(accountIsReady);
-    ui->actionManageSkins->setEnabled(accountIsReady && accountIsOnline);
+    ui->actionManageSkins->setEnabled(accountIsReady);
     ui->actionRefresh->setEnabled(accountIsReady && accountIsOnline);
 
     if (m_accounts->defaultAccount().get() == nullptr) {
@@ -252,6 +255,11 @@ void AccountListPage::on_actionManageSkins_triggered()
             // Skins on Ely.by and other skin servers are changed on their website.
             QDesktopServices::openUrl(QUrl(account->accountData()->serverName() == "Ely.by" ? QString("https://ely.by/skins")
                                                                                              : account->accountData()->yggdrasilServer));
+            return;
+        }
+        if (account->accountType() == AccountType::Offline) {
+            OfflineSkinDialog dialog(this, account);
+            dialog.exec();
             return;
         }
         SkinManageDialog dialog(this, account);

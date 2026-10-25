@@ -231,6 +231,8 @@ set(MINECRAFT_SOURCES
     minecraft/auth/steps/MinecraftProfileStep.cpp
     minecraft/auth/steps/YggdrasilStep.cpp
     minecraft/auth/steps/YggdrasilStep.h
+    minecraft/auth/ElySkinLookup.cpp
+    minecraft/auth/ElySkinLookup.h
     minecraft/auth/steps/MinecraftProfileStep.h
     minecraft/auth/steps/MSADeviceCodeStep.cpp
     minecraft/auth/steps/MSADeviceCodeStep.h
@@ -258,6 +260,10 @@ set(MINECRAFT_SOURCES
     minecraft/launch/EnsureAvailableMemory.h
     minecraft/launch/EnsureAuthlibInjector.cpp
     minecraft/launch/EnsureAuthlibInjector.h
+    minecraft/launch/OfflineSkinServer.cpp
+    minecraft/launch/OfflineSkinServer.h
+    minecraft/launch/StartOfflineSkinServer.cpp
+    minecraft/launch/StartOfflineSkinServer.h
     minecraft/launch/EnsureOfflineLibraries.cpp
     minecraft/launch/EnsureOfflineLibraries.h
     minecraft/launch/ModMinecraftJar.cpp
@@ -1132,6 +1138,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/MSALoginDialog.h
     ui/dialogs/SkinServerLoginDialog.cpp
     ui/dialogs/SkinServerLoginDialog.h
+    ui/dialogs/OfflineSkinDialog.cpp
+    ui/dialogs/OfflineSkinDialog.h
     ui/dialogs/NetworkJobFailedDialog.cpp
     ui/dialogs/NetworkJobFailedDialog.h
     ui/dialogs/NewComponentDialog.cpp
