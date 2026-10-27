@@ -621,6 +621,8 @@ void MainWindow::setupUpdateButton()
     };
 
     connect(button, &QToolButton::clicked, this, [this, updater] {
+        if (updater->isDownloading())
+            return;  // the button turns into "Restart to update" once the download is checked
         if (!updater->isReady()) {
             QDesktopServices::openUrl(QUrl(updater->releasePage()));
             return;
@@ -634,6 +636,15 @@ void MainWindow::setupUpdateButton()
                 return;
         }
         updater->restartToUpdate();
+    });
+    connect(updater, &EmcUpdater::updateDownloading, this, [this, button](const QString& version, int percent) {
+        button->setText(percent > 0 ? tr("Downloading EMC %1… %2%").arg(version).arg(percent) : tr("Downloading EMC %1…").arg(version));
+        button->setToolTip(tr("A new EMC is out. It downloads in the background; then this button restarts EMC to update."));
+        if (!m_updateAction->isVisible()) {
+            m_updateAction->setVisible(true);
+            m_toolBarTextWidth = -1;
+            fitMainToolBar();
+        }
     });
     connect(updater, &EmcUpdater::updateReady, this, [showReady](const QString& v) { showReady(v, true); });
     connect(updater, &EmcUpdater::updateAvailable, this, [showAvailable](const QString& v) { showAvailable(v, true); });

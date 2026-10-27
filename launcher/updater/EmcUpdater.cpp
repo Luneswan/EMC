@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -22,8 +23,13 @@
 namespace {
 
 const char* kLatestRelease = "https://api.github.com/repos/Luneswan/EMC/releases/latest";
-constexpr int kFirstCheckMs = 15 * 1000;
-constexpr int kRecheckMs = 6 * 60 * 60 * 1000;
+// The release page redirects to /tag/v<newest>. Asking it costs nothing (the GitHub API allows 60 calls an hour), so
+// EMC can look often and only asks the API for the downloads once a newer version is out.
+const char* kLatestPage = "https://github.com/Luneswan/EMC/releases/latest";
+constexpr int kFirstCheckMs = 3 * 1000;
+constexpr int kRecheckMs = 2 * 60 * 1000;
+constexpr qint64 kFocusCheckMs = 30 * 1000;  // coming back to EMC looks again, at most this often
+constexpr qint64 kApiFallbackMs = 60 * 60 * 1000;
 
 QString shellQuote(QString s)
 {
@@ -70,12 +76,51 @@ void EmcUpdater::start()
 {
     QTimer::singleShot(kFirstCheckMs, this, &EmcUpdater::checkNow);
     m_timer.start();
+    connect(qGuiApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+        if (state == Qt::ApplicationActive && (!m_lastProbe.isValid() || m_lastProbe.elapsed() > kFocusCheckMs))
+            checkNow();
+    });
 }
 
 void EmcUpdater::checkNow()
 {
-    if (isReady() || m_download)
+    if (isReady() || m_download || m_probe)
         return;
+    m_lastProbe.start();
+    QNetworkRequest request{ QUrl(kLatestPage) };
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+    request.setRawHeader("User-Agent", QString("EMC/%1").arg(BuildConfig.versionString()).toUtf8());
+    request.setTransferTimeout(15000);
+    m_probe = m_network->head(request);
+    connect(m_probe, &QNetworkReply::finished, this, [this] {
+        auto* reply = m_probe.data();
+        reply->deleteLater();
+        const QString location = reply->header(QNetworkRequest::LocationHeader).toUrl().toString();
+        const int at = location.lastIndexOf("/tag/");
+        QString tag = at >= 0 ? location.mid(at + 5) : QString();
+        if (tag.startsWith('v'))
+            tag.remove(0, 1);
+        if (tag.isEmpty()) {
+            // GitHub changed or is down: fall back to the API, but rarely
+            if (!m_lastApiCall.isValid() || m_lastApiCall.elapsed() > kApiFallbackMs)
+                fetchRelease();
+            return;
+        }
+        if (!(Version(tag) > Version(BuildConfig.versionString()))) {
+            qDebug() << "EMC is up to date; the newest release is" << tag;
+            return;
+        }
+        // A download page already offered for this version needs no second look.
+        if (m_kind == Kind::Manual && tag == m_latestVersion)
+            return;
+        qInfo() << "Newer EMC release seen:" << tag;
+        fetchRelease();
+    });
+}
+
+void EmcUpdater::fetchRelease()
+{
+    m_lastApiCall.start();
     QNetworkRequest request{ QUrl(kLatestRelease) };
     request.setRawHeader("Accept", "application/vnd.github+json");
     request.setRawHeader("User-Agent", QString("EMC/%1").arg(BuildConfig.versionString()).toUtf8());
@@ -117,7 +162,7 @@ void EmcUpdater::onReleaseReply(QNetworkReply* reply)
         }
         qInfo() << "The release has no" << m_assetName << "- showing the download page instead";
     }
-    emit updateAvailable(tag);
+    announceAvailable();
 }
 
 void EmcUpdater::download(const QString& url, const QString& name, qint64 size, const QString& sha256)
@@ -134,12 +179,19 @@ void EmcUpdater::download(const QString& url, const QString& name, qint64 size, 
     if (!file->open(QIODevice::WriteOnly)) {
         qWarning() << "Cannot save the update to" << file->fileName();
         file->deleteLater();
-        emit updateAvailable(m_latestVersion);
+        announceAvailable();
         return;
     }
     QNetworkRequest request{ QUrl(url) };
     request.setRawHeader("User-Agent", QString("EMC/%1").arg(BuildConfig.versionString()).toUtf8());
     m_download = m_network->get(request);
+    emit updateDownloading(m_latestVersion, 0);
+    connect(m_download, &QNetworkReply::downloadProgress, this, [this, size](qint64 received, qint64 total) {
+        if (total <= 0)
+            total = size;
+        if (total > 0)
+            emit updateDownloading(m_latestVersion, int(received * 100 / total));
+    });
     auto* hash = new QCryptographicHash(QCryptographicHash::Sha256);
     connect(m_download, &QNetworkReply::readyRead, this, [this, file, hash] {
         const QByteArray chunk = m_download->readAll();
@@ -161,7 +213,7 @@ void EmcUpdater::download(const QString& url, const QString& name, qint64 size, 
             qWarning() << "Update download failed:" << reply->errorString() << "size" << file->size() << "expected" << size;
             file->remove();
             file->deleteLater();
-            emit updateAvailable(m_latestVersion);
+            announceAvailable();
             return;
         }
         QFile::remove(target);
@@ -174,6 +226,15 @@ void EmcUpdater::download(const QString& url, const QString& name, qint64 size, 
         m_readyFile = target;
         emit updateReady(m_latestVersion);
     });
+}
+
+void EmcUpdater::announceAvailable()
+{
+    // a download that keeps failing is retried on every check; say so only once per version
+    if (m_announced == m_latestVersion)
+        return;
+    m_announced = m_latestVersion;
+    emit updateAvailable(m_latestVersion);
 }
 
 void EmcUpdater::restartToUpdate()

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -24,10 +25,11 @@ class EmcUpdater : public QObject {
 
     EmcUpdater(QNetworkAccessManager* network, const QString& workDir, QObject* parent = nullptr);
 
-    void start();          // first check shortly after launch, then every few hours
+    void start();          // first check right after launch, then every two minutes and on coming back to EMC
     void checkNow();
 
     bool isReady() const { return !m_readyFile.isEmpty(); }
+    bool isDownloading() const { return !m_download.isNull(); }
     bool isAvailable() const { return !m_latestVersion.isEmpty(); }
     QString latestVersion() const { return m_latestVersion; }
     QString releasePage() const { return m_releasePage; }
@@ -39,12 +41,15 @@ class EmcUpdater : public QObject {
    signals:
     void updateAvailable(const QString& version);  // newer release found (and not installable in place)
     void updateReady(const QString& version);      // downloaded and checked, waiting for a restart
+    void updateDownloading(const QString& version, int percent);  // found, and downloading in the background
 
    private:
+    void fetchRelease();
     void onReleaseReply(QNetworkReply* reply);
     void download(const QString& url, const QString& name, qint64 size, const QString& sha256);
     bool launchInstall(bool relaunch);
     void installOnQuit();
+    void announceAvailable();
 
     QNetworkAccessManager* m_network;
     QString m_workDir;
@@ -54,7 +59,11 @@ class EmcUpdater : public QObject {
     QString m_latestVersion;
     QString m_releasePage;
     QString m_readyFile;
+    QString m_announced;
     QPointer<QNetworkReply> m_download;
+    QPointer<QNetworkReply> m_probe;
+    QElapsedTimer m_lastProbe;
+    QElapsedTimer m_lastApiCall;
     bool m_launched = false;
     bool m_relaunch = false;
 };
