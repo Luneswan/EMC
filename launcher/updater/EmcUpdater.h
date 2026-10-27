@@ -30,6 +30,7 @@ class EmcUpdater : public QObject {
 
     bool isReady() const { return !m_readyFile.isEmpty(); }
     bool isDownloading() const { return !m_download.isNull(); }
+    bool isChecking() const { return !m_probe.isNull(); }
     bool isAvailable() const { return !m_latestVersion.isEmpty(); }
     QString latestVersion() const { return m_latestVersion; }
     QString releasePage() const { return m_releasePage; }
@@ -42,6 +43,7 @@ class EmcUpdater : public QObject {
     void updateAvailable(const QString& version);  // newer release found (and not installable in place)
     void updateReady(const QString& version);      // downloaded and checked, waiting for a restart
     void updateDownloading(const QString& version, int percent);  // found, and downloading in the background
+    void checked(const QString& newest, bool newer);  // a check finished; newest is empty when GitHub couldn't be reached
 
    private:
     void fetchRelease();

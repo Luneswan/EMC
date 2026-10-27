@@ -34,3 +34,9 @@ for _ in 1 2 3; do
       [ -e "install/$dll" ] || [ ! -e "/ucrt64/bin/$dll" ] || cp -v "/ucrt64/bin/$dll" install/
     done
 done
+# Test hooks are temporary source edits keyed on EMC_TEST. If one was reverted with a copy that kept an old file time,
+# ninja keeps the hooked object file and the hook ships. Refuse to finish with one inside.
+if grep -aq "EMC_TEST" install/EMC.exe; then
+  echo "install/EMC.exe still contains test hook code (EMC_TEST): touch the reverted sources and rebuild" >&2
+  exit 1
+fi

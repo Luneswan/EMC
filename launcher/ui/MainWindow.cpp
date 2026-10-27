@@ -594,6 +594,46 @@ void MainWindow::setupUpdateButton()
     auto* updater = APPLICATION->emcUpdater();
     if (!updater)
         return;
+    // A small "check now" button, for when a release was just published.
+    auto* checkButton = new QToolButton(this);
+    checkButton->setObjectName("updateCheckButton");
+    checkButton->setIcon(QIcon::fromTheme("refresh"));
+    checkButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    checkButton->setAutoRaise(true);
+    checkButton->setCursor(Qt::PointingHandCursor);
+    checkButton->setToolTip(tr("Check for EMC updates"));
+    ui->mainToolBar->insertWidget(ui->actionAccountsButton, checkButton);
+    auto* checkReset = new QTimer(this);
+    checkReset->setSingleShot(true);
+    connect(checkReset, &QTimer::timeout, this, [checkButton] {
+        checkButton->setEnabled(true);
+        checkButton->setToolTip(tr("Check for EMC updates"));
+    });
+    connect(checkButton, &QToolButton::clicked, this, [this, updater, checkButton] {
+        if (updater->isReady() || updater->isDownloading()) {
+            statusBar()->showMessage(tr("An EMC update is already on its way; see the button next to this one."), 5000);
+            return;
+        }
+        checkButton->setEnabled(false);
+        checkButton->setToolTip(tr("Checking for updates…"));
+        statusBar()->showMessage(tr("Checking for EMC updates…"));
+        m_userCheckedUpdates = true;
+        updater->checkNow();
+    });
+    connect(updater, &EmcUpdater::checked, this, [this, checkButton, checkReset](const QString& newest, bool newer) {
+        checkReset->start(1500);
+        if (!m_userCheckedUpdates)
+            return;
+        m_userCheckedUpdates = false;
+        if (newest.isEmpty())
+            statusBar()->showMessage(tr("Couldn't reach GitHub to check for updates. Try again in a moment."), 6000);
+        else if (newer)
+            statusBar()->showMessage(tr("EMC %1 is out. Getting it now…").arg(newest), 6000);
+        else
+            statusBar()->showMessage(tr("EMC is up to date (%1).").arg(BuildConfig.versionString()), 6000);
+        checkButton->setToolTip(newer ? tr("EMC %1 is out").arg(newest) : tr("EMC is up to date"));
+    });
+
     auto* button = new QToolButton(this);
     button->setObjectName("updateButton");
     button->setCursor(Qt::PointingHandCursor);

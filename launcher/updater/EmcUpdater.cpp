@@ -27,7 +27,7 @@ const char* kLatestRelease = "https://api.github.com/repos/Luneswan/EMC/releases
 // EMC can look often and only asks the API for the downloads once a newer version is out.
 const char* kLatestPage = "https://github.com/Luneswan/EMC/releases/latest";
 constexpr int kFirstCheckMs = 3 * 1000;
-constexpr int kRecheckMs = 2 * 60 * 1000;
+constexpr int kRecheckMs = 60 * 1000;
 constexpr qint64 kFocusCheckMs = 30 * 1000;  // coming back to EMC looks again, at most this often
 constexpr qint64 kApiFallbackMs = 60 * 60 * 1000;
 
@@ -101,12 +101,15 @@ void EmcUpdater::checkNow()
         if (tag.startsWith('v'))
             tag.remove(0, 1);
         if (tag.isEmpty()) {
+            emit checked({}, false);
             // GitHub changed or is down: fall back to the API, but rarely
             if (!m_lastApiCall.isValid() || m_lastApiCall.elapsed() > kApiFallbackMs)
                 fetchRelease();
             return;
         }
-        if (!(Version(tag) > Version(BuildConfig.versionString()))) {
+        const bool newer = Version(tag) > Version(BuildConfig.versionString());
+        emit checked(tag, newer);
+        if (!newer) {
             qDebug() << "EMC is up to date; the newest release is" << tag;
             return;
         }
