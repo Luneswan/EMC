@@ -81,6 +81,15 @@ void YggdrasilStep::post(const QString& endpoint, const QJsonObject& body)
     m_task->start();
 }
 
+void YggdrasilStep::abort()
+{
+    // m_data may be freed once the flow is gone, so the reply must not reach onRequestDone
+    if (m_task) {
+        disconnect(m_task.get(), nullptr, this, nullptr);
+        m_task->abort();
+    }
+}
+
 void YggdrasilStep::onRequestDone(QByteArray* response)
 {
     m_data->needsOneTimeCode = false;
@@ -93,6 +102,14 @@ void YggdrasilStep::onRequestDone(QByteArray* response)
 
     if (error == QNetworkReply::NoError && status == 200 && hasJson) {
         processResponse(doc.object());
+        return;
+    }
+    // A busy or broken server is an outage, not a refusal, even when it explains itself in JSON. Keep the token.
+    if (status >= 500 || status == 429) {
+        qWarning() << "Skin server unavailable:" << status << m_request->errorString() << QString::fromUtf8(*response);
+        m_data->networkError = error;
+        emit finished(AccountTaskState::STATE_OFFLINE,
+                      tr("Couldn't reach %1. Check your internet connection and try again.").arg(m_data->serverName()));
         return;
     }
     // The server answered with a reason (wrong password, expired token, two-factor code needed...)
@@ -129,11 +146,26 @@ void YggdrasilStep::processResponse(const QJsonObject& response)
 
     // Ely.by has one player per account. Servers with several pick the first; the player can sign in again to switch.
     QJsonObject profile = response.value("selectedProfile").toObject();
-    if (profile.isEmpty()) {
+    if (profile.isEmpty() && !m_isRefresh) {
         const auto available = response.value("availableProfiles").toArray();
-        if (!available.isEmpty())
-            profile = available.first().toObject();
+        const auto chosen = available.isEmpty() ? QJsonObject() : available.first().toObject();
+        if (!chosen.value("id").toString().isEmpty() && !chosen.value("name").toString().isEmpty()) {
+            // The token is not bound to a player yet, and game servers refuse an unbound one. Bind it with a refresh.
+            m_data->minecraftProfile.id = chosen.value("id").toString();
+            m_data->minecraftProfile.name = chosen.value("name").toString();
+            QJsonObject selected{ { "id", m_data->minecraftProfile.id }, { "name", m_data->minecraftProfile.name } };
+            QJsonObject body{ { "accessToken", accessToken },
+                              { "clientToken", m_data->clientToken() },
+                              { "selectedProfile", selected },
+                              { "requestUser", true } };
+            m_isRefresh = true;
+            post("/authserver/refresh", body);
+            return;
+        }
     }
+    // A refresh keeps the player the token is already bound to; the server need not name it again.
+    if (profile.isEmpty() && m_isRefresh && !m_data->minecraftProfile.id.isEmpty() && !m_data->minecraftProfile.name.isEmpty())
+        profile = QJsonObject{ { "id", m_data->minecraftProfile.id }, { "name", m_data->minecraftProfile.name } };
     const QString id = profile.value("id").toString();
     const QString name = profile.value("name").toString();
     if (id.isEmpty() || name.isEmpty()) {
@@ -167,8 +199,14 @@ void YggdrasilStep::processError(const QJsonObject& response)
         return;
     }
     if (m_isRefresh) {
-        // The saved session is gone (signed out elsewhere, or too old). The player has to sign in again.
-        emit finished(AccountTaskState::STATE_FAILED_HARD, tr("Your %1 session has expired. Sign in again.").arg(m_data->serverName()));
+        const int status = m_request->replyStatusCode();
+        if (error == "ForbiddenOperationException" || status == 401 || status == 403) {
+            // The saved session is gone (signed out elsewhere, or too old). The player has to sign in again.
+            emit finished(AccountTaskState::STATE_FAILED_HARD, tr("Your %1 session has expired. Sign in again.").arg(m_data->serverName()));
+            return;
+        }
+        // Any other refusal says nothing about the token, so keep it.
+        emit finished(AccountTaskState::STATE_FAILED_SOFT, message.isEmpty() ? error : message);
         return;
     }
     if (message.contains("Invalid credentials", Qt::CaseInsensitive)) {
@@ -199,6 +237,14 @@ void YggdrasilProfileStep::perform()
     m_task->addNetAction(m_request);
     connect(m_task.get(), &Task::finished, this, [this, response] { onRequestDone(response); });
     m_task->start();
+}
+
+void YggdrasilProfileStep::abort()
+{
+    if (m_task) {
+        disconnect(m_task.get(), nullptr, this, nullptr);
+        m_task->abort();
+    }
 }
 
 void YggdrasilProfileStep::onRequestDone(QByteArray* response)
@@ -252,6 +298,14 @@ void YggdrasilMetadataStep::perform()
     m_task->addNetAction(m_request);
     connect(m_task.get(), &Task::finished, this, [this, response] { onRequestDone(response); });
     m_task->start();
+}
+
+void YggdrasilMetadataStep::abort()
+{
+    if (m_task) {
+        disconnect(m_task.get(), nullptr, this, nullptr);
+        m_task->abort();
+    }
 }
 
 void YggdrasilMetadataStep::onRequestDone(QByteArray* response)

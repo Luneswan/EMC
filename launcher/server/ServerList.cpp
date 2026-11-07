@@ -171,8 +171,12 @@ void ServerList::startAutoStartServers()
 
 void ServerList::stopAll(int timeoutMs)
 {
+    bool upnp = false;
     for (auto* server : m_servers) {
+        // A pending restart or crash restart must not start a server again while EMC quits.
+        server->setProperty("emcQuitting", true);  // read by ServerInstance::start()
         if (server->isActive()) {
+            upnp = upnp || server->publicMode() == "upnp";
             server->stop();
         }
     }
@@ -180,6 +184,15 @@ void ServerList::stopAll(int timeoutMs)
     while (runningCount() > 0 && !deadline.hasExpired()) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
         QThread::msleep(20);
+    }
+    if (upnp) {
+        // Stopped servers ask the router to remove their port forwards; give those requests a moment
+        // to go out, or the router keeps forwarding the ports to this computer.
+        QDeadlineTimer grace(1500);
+        while (!grace.hasExpired()) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+            QThread::msleep(20);
+        }
     }
     for (auto* server : m_servers) {
         if (server->isActive()) {

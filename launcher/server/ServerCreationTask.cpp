@@ -15,6 +15,8 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QPointer>
+#include <QProcess>
 #include <QRegularExpression>
 #include <QSet>
 
@@ -42,6 +44,13 @@ int freePort(ServerList* list, ServerInstance* self, int start, bool udp)
                 used.insert(s->port());
                 if (s->bedrockPort() > 0) {
                     used.insert(s->bedrockPort());
+                }
+                // Bedrock servers also hold an IPv6 port, normally the next one up.
+                if (s->isBedrock()) {
+                    ServerProperties props;
+                    props.setUnicodeEscapes(false);
+                    props.load(s->propertiesPath());
+                    used.insert(props.intValue("server-portv6", s->port() + 1));
                 }
             }
         }
@@ -83,7 +92,33 @@ void ServerCreationTask::emitFailed(QString reason)
 
 void ServerCreationTask::emitAborted()
 {
-    discard();
+    m_aborted = true;  // so the killed installer's finished handler below does not report a failure
+    // A running mod loader installer keeps writing into the folder; stop it before deleting the folder.
+    for (auto* process : findChildren<QProcess*>(Qt::FindDirectChildrenOnly)) {
+        if (process->state() != QProcess::NotRunning) {
+            process->kill();
+            process->waitForFinished(5000);
+        }
+    }
+    // Unpacking runs on a worker thread that only stops between files. Keep that sub-task alive past
+    // this task and delete the folder once it is done, or the worker writes into freed memory.
+    if (m_current && m_current->isRunning()) {
+        m_current->abort();
+    }
+    if (m_current && m_current->isRunning()) {
+        auto* keep = new Task::Ptr(m_current);
+        QPointer<ServerList> list = m_list;
+        QPointer<ServerInstance> server = m_server;
+        m_server = nullptr;
+        connect(m_current.get(), &Task::finished, m_current.get(), [keep, list, server] {
+            if (list && server) {
+                list->remove(server, true);
+            }
+            delete keep;  // the task itself goes with deleteLater, after its signal returns
+        });
+    } else {
+        discard();
+    }
     ServerStepTask::emitAborted();
 }
 

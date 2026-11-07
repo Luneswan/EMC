@@ -42,6 +42,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QRegularExpression>
+#include <QTimer>
 #include <limits>
 
 #include "tasks/Task.h"
@@ -117,6 +118,11 @@ ProgressDialog::ProgressDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Pr
     ui->skipButton->setMinimumWidth(96);
     setSizeGripEnabled(false);
     m_stepTick.start();
+    // Shows the update the 150 ms throttle skipped, so a step that then goes quiet is not left stale.
+    auto* stepRefresh = new QTimer(this);
+    stepRefresh->setObjectName(QStringLiteral("stepRefreshTimer"));
+    stepRefresh->setSingleShot(true);
+    connect(stepRefresh, &QTimer::timeout, this, [this] { refreshStepLine(true); });
     this->setWindowFlags(this->windowFlags() & ~Qt::WindowContextHelpButtonHint);
     setAttribute(Qt::WidgetAttribute::WA_QuitOnClose, true);
     changeProgress(0, 100);
@@ -285,17 +291,29 @@ void ProgressDialog::changeStatus([[maybe_unused]] const QString& status)
 
 void ProgressDialog::refreshSideText()
 {
-    if (!m_sideText.isEmpty())
-        ui->globalStatusDetailsLabel->setText(m_sideText);
-    else
+    if (!m_sideText.isEmpty()) {
+        // Capped and elided, or a long status (a URL) takes the whole row and squeezes the headline away.
+        auto* label = ui->globalStatusDetailsLabel;
+        const int cap = std::max(120, static_cast<int>(0.4 * width()));
+        label->setText(label->fontMetrics().elidedText(m_sideText, Qt::ElideMiddle, cap));
+        label->setToolTip(m_sideText.size() > 40 ? m_sideText : QString());
+    } else {
+        ui->globalStatusDetailsLabel->setToolTip(QString());
         ui->globalStatusDetailsLabel->setText(m_percent >= 0 ? QString("%1%").arg(m_percent) : QString());
+    }
 }
 
 void ProgressDialog::refreshStepLine(bool force)
 {
     // Text that changes forty times a second is unreadable; refresh it a few times a second at most.
-    if (!force && m_stepTick.elapsed() < 150)
+    auto* stepRefresh = findChild<QTimer*>(QStringLiteral("stepRefreshTimer"), Qt::FindDirectChildrenOnly);
+    if (!force && m_stepTick.elapsed() < 150) {
+        if (stepRefresh && !stepRefresh->isActive())
+            stepRefresh->start(static_cast<int>(150 - m_stepTick.elapsed()));
         return;
+    }
+    if (stepRefresh)
+        stepRefresh->stop();
     m_stepTick.restart();
 
     // Show the longest-running step that is still going: that is the stage, the newer ones are its files.
@@ -325,6 +343,9 @@ void ProgressDialog::changeStepProgress(const TaskStepProgress& task_progress)
     if (task_progress.isDone()) {
         m_steps.remove(task_progress.uid);
         refreshStepLine(task_progress.uid == m_shownStep);
+        // Nothing replaced the finished step: forget it, so the next step to start is shown at once.
+        if (task_progress.uid == m_shownStep)
+            m_shownStep = QUuid();
         return;
     }
     auto it = m_steps.find(task_progress.uid);

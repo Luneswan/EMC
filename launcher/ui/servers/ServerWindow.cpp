@@ -40,6 +40,7 @@ ServerWindow* ServerWindow::open(ServerInstance* server, const QString& page)
     if (!window) {
         window = new ServerWindow(server);
         map.insert(server, window);
+        APPLICATION->trackWindow(window);
         connect(server, &QObject::destroyed, window, &QWidget::close);
         connect(window, &QObject::destroyed, qApp, [server] { windows().remove(server); });
     }
@@ -118,6 +119,10 @@ ServerWindow::ServerWindow(ServerInstance* server) : QMainWindow(nullptr), m_ser
             setWindowTitle(m_server->name());
         }
     });
+    // EMC can quit while this window is open (closing the main window with no server running), and
+    // then closeEvent never runs. Save the pages' edits here so they are not lost. The servers still
+    // exist at this point; they are destroyed after the event loop has ended.
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this] { m_container->saveAll(); });
     updateButtons();
 }
 

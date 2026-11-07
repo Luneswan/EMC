@@ -15,6 +15,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QPointer>
 
 #include "Application.h"
 #include "FileSystem.h"
@@ -31,8 +32,13 @@ namespace {
 constexpr qint64 checkEverySecs = 6 * 60 * 60;
 }  // namespace
 
-void ContentAutoUpdate::updateInstance(QWidget* parent, MinecraftInstance* instance)
+void ContentAutoUpdate::updateInstance(QWidget* parent, MinecraftInstance* instanceIn)
 {
+    Q_UNUSED(parent)
+    // The waits below run the event loop: the instance can be deleted meanwhile, so check it after each one.
+    // The console window that started the launch can close too, so the dialogs get no parent at all;
+    // a parent deleted while a dialog runs its own loop would take the dialog with it.
+    QPointer<MinecraftInstance> instance(instanceIn);
     auto settings = APPLICATION->settings();
     if (!settings->get("AutoUpdateContent").toBool() || settings->get("ModMetadataDisabled").toBool()) {
         return;
@@ -48,6 +54,9 @@ void ContentAutoUpdate::updateInstance(QWidget* parent, MinecraftInstance* insta
             QEventLoop loop;
             QObject::connect(task.get(), &Task::finished, &loop, &QEventLoop::quit);
             loop.exec();
+        }
+        if (!instance) {
+            return;
         }
     }
     if (!profile->getModLoaders().has_value()) {
@@ -76,6 +85,9 @@ void ContentAutoUpdate::updateInstance(QWidget* parent, MinecraftInstance* insta
             loop.exec();
         }
     }
+    if (!instance) {
+        return;
+    }
     QList<Resource*> mods;
     for (auto* mod : model->allResources()) {
         if (mod->enabled()) {
@@ -87,14 +99,14 @@ void ContentAutoUpdate::updateInstance(QWidget* parent, MinecraftInstance* insta
         return;
     }
 
-    ResourceUpdateDialog check(parent, instance, model, mods, true, profile->getModLoadersList());
+    ResourceUpdateDialog check(nullptr, instance, model, mods, true, profile->getModLoadersList());
     check.setQuiet(true);
     check.checkCandidates();
-    if (check.aborted()) {
+    if (!instance || check.aborted()) {
         return;  // offline or skipped: try again next launch
     }
-    touchMarker();
     if (check.noUpdates()) {
+        touchMarker();
         return;
     }
 
@@ -102,10 +114,17 @@ void ContentAutoUpdate::updateInstance(QWidget* parent, MinecraftInstance* insta
     for (const auto& task : check.getTasks()) {
         downloads.addTask(task);
     }
-    ProgressDialog progress(parent);
+    ProgressDialog progress(nullptr);
     progress.setWindowTitle(QObject::tr("Updating mods"));
     progress.showSkipButton();
     progress.execWithTask(&downloads);
+    if (!instance) {
+        return;
+    }
+    // Skipped or failed downloads are tried again on the next launch, not hours later.
+    if (downloads.wasSuccessful()) {
+        touchMarker();
+    }
     qDebug() << "Updated mods of" << instance->name() << ":" << check.getTasks().size();
     model->update();
 }

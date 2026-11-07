@@ -36,6 +36,7 @@ class YggdrasilStep : public AuthStep {
 
     void perform() override;
     QString describe() override;
+    void abort() override;
 
    private slots:
     void onRequestDone(QByteArray* response);
@@ -61,6 +62,7 @@ class YggdrasilProfileStep : public AuthStep {
 
     void perform() override;
     QString describe() override;
+    void abort() override;
 
    private slots:
     void onRequestDone(QByteArray* response);
@@ -79,6 +81,7 @@ class YggdrasilMetadataStep : public AuthStep {
 
     void perform() override;
     QString describe() override;
+    void abort() override;
 
    private slots:
     void onRequestDone(QByteArray* response);

@@ -134,8 +134,12 @@ void EnsureAuthlibInjector::succeedWith(const QString& jar)
 
 bool EnsureAuthlibInjector::abort()
 {
-    if (m_job)
+    if (m_job) {
+        // NetJob finishes synchronously on abort; without this its handler would finish the step a second time
+        disconnect(m_job.get(), nullptr, this, nullptr);
         m_job->abort();
-    emitAborted();
+    }
+    if (isRunning())
+        emitAborted();
     return true;
 }

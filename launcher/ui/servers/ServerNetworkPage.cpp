@@ -695,11 +695,14 @@ void ServerNetworkPage::refresh()
     const QString lan = ServerNetwork::lanAddress();
     if (mode == "upnp" && m_checked && !m_report.upnp && !lan.isEmpty()) {
         const QString protocol = m_server->isBedrock() ? "UDP" : "TCP";
+        QString rule = tr("%1 port %2").arg(protocol).arg(m_server->port());
+        if (!m_server->isBedrock() && m_server->crossplay()) {
+            // Geyser listens on its own UDP port, which ServerHosting forwards as well.
+            rule = tr("TCP port %1 and UDP port %2").arg(m_server->port()).arg(m_server->bedrockPort());
+        }
         m_manual->setText(tr("To forward the port by hand: open your router's settings page (often http://192.168.1.1 or "
-                             "http://192.168.0.1), find Port Forwarding, and add %1 port %2 to %3. Or turn on UPnP there.")
-                              .arg(protocol)
-                              .arg(m_server->port())
-                              .arg(lan));
+                             "http://192.168.0.1), find Port Forwarding, and add %1 to %2. Or turn on UPnP there.")
+                              .arg(rule, lan));
         m_manual->show();
     } else {
         m_manual->hide();

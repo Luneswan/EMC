@@ -104,11 +104,13 @@ int compare(const QString& a, const QString& b)
     const auto pa = a.split(split);
     const auto pb = b.split(split);
     for (int i = 0; i < std::max(pa.size(), pb.size()); ++i) {
-        if (i >= pa.size()) {
-            return -1;
-        }
-        if (i >= pb.size()) {
-            return 1;
+        if (i >= pa.size() || i >= pb.size()) {
+            // The longer one is newer when it goes on with a number (1.21.1 > 1.21), older when it goes
+            // on with a pre-release tag (1.21-rc1 < 1.21).
+            const bool aLonger = i < pa.size();
+            bool numeric = false;
+            (aLonger ? pa : pb)[i].toInt(&numeric);
+            return aLonger == numeric ? 1 : -1;
         }
         bool okA = false;
         bool okB = false;

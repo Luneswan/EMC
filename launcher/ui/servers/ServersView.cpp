@@ -134,8 +134,16 @@ ServerCard::ServerCard(ServerInstance* server, QWidget* parent) : QFrame(parent)
         auto reply = CustomMessageBox::selectable(this, tr("Delete server"), message, QMessageBox::Warning,
                                                   QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
                          ->exec();
-        if (reply == QMessageBox::Yes) {
-            APPLICATION->servers()->remove(m_server, true);
+        if (reply != QMessageBox::Yes || !m_server) {
+            return;
+        }
+        // The server may have started (tray, auto-start) while the question was open.
+        if (m_server->isActive()) {
+            QMessageBox::information(this, tr("Delete server"), tr("Stop the server before deleting it."));
+            return;
+        }
+        if (!APPLICATION->servers()->remove(m_server, true)) {
+            QMessageBox::warning(this, tr("Delete server"), tr("Could not delete the server."));
         }
     });
     m_more->setMenu(menu);

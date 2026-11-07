@@ -25,6 +25,19 @@ QFont titleFont(const QFont& base)
     return f;
 }
 
+QColor withAlpha(QColor c, int alpha)
+{
+    c.setAlpha(alpha);
+    return c;
+}
+
+// Mixes two colors, `amount` of the way from a to b.
+QColor blend(const QColor& a, const QColor& b, qreal amount)
+{
+    return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * amount, a.greenF() + (b.greenF() - a.greenF()) * amount,
+                            a.blueF() + (b.blueF() - a.blueF()) * amount);
+}
+
 QFont bodyFont(const QFont& base)
 {
     QFont f = base;
@@ -87,13 +100,19 @@ void OptionCard::paintEvent(QPaintEvent*)
     QPainterPath shape;
     shape.addRoundedRect(r, 12, 12);
 
+    // Colors come from the palette so the card reads on light themes too; on the dark theme the
+    // text color is near white, which gives the same look as before.
+    const QPalette::ColorGroup group = isEnabled() ? QPalette::Active : QPalette::Disabled;
+    const QColor ink = palette().color(group, QPalette::WindowText);
+    const QColor background = palette().color(group, QPalette::Window);
+
     const bool checked = isChecked();
-    QColor fill(255, 255, 255, checked ? 22 : (m_hover ? 14 : 8));
+    QColor fill = withAlpha(ink, checked ? 22 : (m_hover ? 14 : 8));
     if (isDown()) {
         fill.setAlpha(28);
     }
     p.fillPath(shape, fill);
-    QPen border(checked ? QColor(255, 255, 255, 220) : QColor(255, 255, 255, m_hover ? 46 : 26), checked ? 1.6 : 1.0);
+    QPen border(withAlpha(ink, checked ? 220 : (m_hover ? 46 : 26)), checked ? 1.6 : 1.0);
     p.setPen(border);
     p.drawPath(shape);
     if (hasFocus()) {
@@ -101,8 +120,8 @@ void OptionCard::paintEvent(QPaintEvent*)
         p.drawRoundedRect(r.adjusted(2, 2, -2, -2), 10, 10);
     }
 
-    QColor text = isEnabled() ? QColor(245, 245, 247) : QColor(110, 110, 115);
-    QColor sub = isEnabled() ? QColor(161, 161, 166) : QColor(90, 90, 95);
+    const QColor text = ink;
+    const QColor sub = blend(ink, background, 0.35);
 
     const QFont tf = titleFont(font());
     const QFontMetrics tm(tf);
@@ -123,10 +142,10 @@ void OptionCard::paintEvent(QPaintEvent*)
     if (!m_badge.isEmpty()) {
         const QRectF badge(x + tm.horizontalAdvance(title) + 8, y + (tm.height() - 16) / 2.0, bw, 16);
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, checked ? 230 : 40));
+        p.setBrush(withAlpha(ink, checked ? 230 : 40));
         p.drawRoundedRect(badge, 8, 8);
         p.setFont(bf);
-        p.setPen(checked ? QColor(14, 14, 16) : text);
+        p.setPen(checked ? background : text);
         p.drawText(badge, Qt::AlignCenter, m_badge);
     }
 

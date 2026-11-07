@@ -190,6 +190,8 @@ void RemoteServer::pingJava(const QString& host, int port)
     };
     connect(timer, &QTimer::timeout, this, [end] { end(Status{ true }); });
     connect(socket, &QTcpSocket::errorOccurred, this, [end] { end(Status{ true }); });
+    // Like the game (ServerStatusPinger / ConnectScreen), the handshake carries the SRV target and
+    // port it connects to, not the name the user typed: proxies are configured for what vanilla sends.
     connect(socket, &QTcpSocket::connected, this, [socket, clock, host, port] {
         clock->start();
         QByteArray handshake;

@@ -56,6 +56,22 @@ void setDeclined(const QString& program, bool on)
     }
     APPLICATION->settings()->set("ServerFirewallDeclined", list.join('|'));
 }
+
+// netsh writes to a pipe in the OEM code page (437, 850, 866...), not the ANSI one, so paths
+// with accented or Cyrillic letters only match when decoded this way.
+QString fromOem(const QByteArray& bytes)
+{
+    if (bytes.isEmpty()) {
+        return {};
+    }
+    const int length = MultiByteToWideChar(CP_OEMCP, 0, bytes.constData(), int(bytes.size()), nullptr, 0);
+    if (length <= 0) {
+        return QString::fromLocal8Bit(bytes);
+    }
+    std::wstring wide(length, L'\0');
+    MultiByteToWideChar(CP_OEMCP, 0, bytes.constData(), int(bytes.size()), wide.data(), length);
+    return QString::fromStdWString(wide);
+}
 #endif
 }  // namespace
 
@@ -76,7 +92,7 @@ void ServerFirewall::check(const QString& program, std::function<void(State)> do
             done(State::Unknown);
             return;
         }
-        const QString output = QString::fromLocal8Bit(process->readAllStandardOutput()).replace("\r\n", "\n");
+        const QString output = fromOem(process->readAllStandardOutput()).replace("\r\n", "\n");
         const QString target = normalized(program);
         bool allowed = false;
         bool blocked = false;

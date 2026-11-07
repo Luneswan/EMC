@@ -293,6 +293,21 @@ void ModrinthServerUpdateTask::next()
         next();
         return;
     }
+    // Spigot and Bukkit servers are managed as Paper. Unless this one is really a Paper-family server,
+    // a plugin that ran on Spigot must not be swapped for a Paper-only build it cannot load.
+    const auto anyBukkit = [](const QJsonArray& list) { return list.contains(QJsonValue("spigot")) || list.contains(QJsonValue("bukkit")); };
+    if (anyBukkit(had) && !anyBukkit(latest.value("loaders").toArray())) {
+        QDir game(QFileInfo(oldPath).absolutePath());
+        game.cdUp();
+        bool paper = false;
+        for (const auto* marker : { "version_history.json", "paper.yml", "config/paper-global.yml", "paper.jar", "purpur.jar", "folia.jar" }) {
+            paper |= QFileInfo::exists(game.filePath(marker));
+        }
+        if (!paper) {
+            next();
+            return;
+        }
+    }
     const auto files = latest.value("files").toArray();
     if (files.isEmpty()) {
         next();

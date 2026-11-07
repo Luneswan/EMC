@@ -128,20 +128,28 @@ void ServerJoin::join(QWidget* parent, const QString& name, bool bedrock, const 
 {
     const QString address = QString("%1:%2").arg(host).arg(port);
     if (bedrock) {
-        if (!bedrockInstalled()) {
+#ifdef Q_OS_WIN
+        // Adds the server to Bedrock's Servers tab and opens the game. Some installs keep their data outside the
+        // Packages folder, so a failed folder check alone does not mean the game is missing.
+        QUrl url("minecraft:");
+        QUrlQuery query;
+        query.addQueryItem("addExternalServer", QString("%1|%2").arg(name, address));
+        url.setQuery(query);
+        if (!QDesktopServices::openUrl(url) && !bedrockInstalled()) {
             QMessageBox::information(parent, QObject::tr("Bedrock is not installed"),
                                      QObject::tr("Minecraft Bedrock Edition is not installed on this PC. Get it from the Microsoft Store, "
                                                  "then add the server with address %1 and port %2.")
                                          .arg(host)
                                          .arg(port));
-            return;
         }
-        // Adds the server to Bedrock's Servers tab and opens the game.
-        QUrl url("minecraft:");
-        QUrlQuery query;
-        query.addQueryItem("addExternalServer", QString("%1|%2").arg(name, address));
-        url.setQuery(query);
-        QDesktopServices::openUrl(url);
+#else
+        QMessageBox::information(parent, QObject::tr("Bedrock Edition"),
+                                 QObject::tr("Bedrock Edition cannot run on this system. Join %1 port %2 from a phone, console "
+                                             "or Windows PC.")
+                                     .arg(host)
+                                     .arg(port));
+        Q_UNUSED(name)
+#endif
         return;
     }
 

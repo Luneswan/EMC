@@ -33,7 +33,7 @@ const char* kAgentSha256 = "9b00d6ff7d37d1052e5ae097e1348e11deae8617cd7a8ba39d17
 #elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_ARM_64)
 const char* kAgentUrl = "https://github.com/playit-cloud/playit-agent/releases/download/v0.17.1/playit-linux-aarch64";
 const char* kAgentSha256 = "cd3fa1cedac40a71d80a120e6353e08836308840340b58e659e8f25d00601f66";
-#elif defined(Q_OS_LINUX)
+#elif defined(Q_OS_LINUX) && defined(Q_PROCESSOR_X86_64)
 const char* kAgentUrl = "https://github.com/playit-cloud/playit-agent/releases/download/v0.17.1/playit-linux-amd64";
 const char* kAgentSha256 = "e78d463d93aa1e3ec36a06ded5a1f4fe879905fdceb865df8f4cef6124f8a555";
 #else
@@ -42,6 +42,12 @@ const char* kAgentSha256 = "";
 #endif
 constexpr int kClaimIntervalMs = 2000;
 constexpr int kClaimMaxAttempts = 300;  // ten minutes
+// After this many agent starts in a row that fail, stop retrying until servers are restarted.
+constexpr int kMaxFailedStarts = 3;
+int failedStarts = 0;
+// Servers with a prepare() still running. A second one at the same time would read rundata before
+// the first one's tunnels exist and create them twice.
+QList<QPointer<ServerInstance>> preparing;
 
 // Downloads the agent and checks it against the published hash.
 class PlayitDownloadTask : public ServerStepTask {
@@ -279,13 +285,22 @@ void PlayitAgent::prepare(ServerInstance* server, std::function<void(QString)> d
         done(tr("Link playit.gg first."));
         return;
     }
+    preparing.removeAll(nullptr);
+    if (preparing.contains(QPointer<ServerInstance>(server))) {
+        return;  // the running one sets the addresses
+    }
+    preparing.append(server);
     QPointer<ServerInstance> guard(server);
-    api("/agents/rundata", {}, [this, guard, done](const QJsonValue& data, const QString& error) {
+    auto finish = [guard, done](const QString& error) {
+        preparing.removeAll(guard);
+        done(error);
+    };
+    api("/agents/rundata", {}, [this, guard, finish](const QJsonValue& data, const QString& error) {
         if (!guard) {
             return;
         }
         if (!error.isEmpty()) {
-            done(tr("playit.gg: %1").arg(error));
+            finish(tr("playit.gg: %1").arg(error));
             return;
         }
         const auto run = data.toObject();
@@ -323,7 +338,7 @@ void PlayitAgent::prepare(ServerInstance* server, std::function<void(QString)> d
             });
         }
         // New tunnels take a few seconds to get an address.
-        waitForTunnels(guard, creating > 0 ? 20 : 1, done);
+        waitForTunnels(guard, creating > 0 ? 20 : 1, finish);
     });
 }
 
@@ -402,6 +417,7 @@ void PlayitAgent::updateProcess()
             m_process->deleteLater();
             m_process = nullptr;
         }
+        failedStarts = 0;  // the next server start tries again from scratch
         setAgentStatus({});
         emit agentStateChanged();
         return;
@@ -427,6 +443,7 @@ void PlayitAgent::updateProcess()
             for (const auto& line : QString::fromUtf8(m_process->readAllStandardOutput()).split('\n', Qt::SkipEmptyParts)) {
                 const QString text = line.trimmed();
                 if (text.contains("tunnel running", Qt::CaseInsensitive) || text.contains("agent registered", Qt::CaseInsensitive)) {
+                    failedStarts = 0;
                     setAgentStatus(tr("Connected to playit.gg"));
                 } else if (text.contains("ERROR")) {
                     setAgentStatus(tr("playit agent: %1").arg(text.section("ERROR", 1).trimmed().left(160)));
@@ -434,12 +451,24 @@ void PlayitAgent::updateProcess()
             }
         });
         // If the agent exits on its own (a crash, a lost connection), bring it back while a server needs it.
-        auto restart = [this, process = m_process.data()] {
+        auto restart = [this, process = m_process.data()](bool failedToStart) {
             if (m_process != process) {
                 return;
             }
             m_process = nullptr;
             process->deleteLater();
+            if (failedToStart) {
+                ++failedStarts;
+                if (failedStarts >= kMaxFailedStarts) {
+                    setAgentStatus(tr("The playit agent cannot run on this computer."));
+                    emit agentStateChanged();
+                    return;
+                }
+                // The file may be damaged or the wrong build: download it again once.
+                if (failedStarts == 1) {
+                    QFile::remove(agentPath());
+                }
+            }
             setAgentStatus(tr("The playit agent stopped. Reconnecting…"));
             emit agentStateChanged();
             QTimer::singleShot(15000, this, [this] {
@@ -448,10 +477,10 @@ void PlayitAgent::updateProcess()
                 }
             });
         };
-        connect(m_process, &QProcess::finished, this, restart);
+        connect(m_process, &QProcess::finished, this, [restart] { restart(false); });
         connect(m_process, &QProcess::errorOccurred, this, [restart](QProcess::ProcessError error) {
             if (error == QProcess::FailedToStart) {
-                restart();
+                restart(true);
             }
         });
         m_process->start(agentPath(), { "--stdout", "start" });

@@ -96,6 +96,7 @@ class WindowCat : public QWidget {
     void stepHang(double dt);
     bool cursorCatchable() const;
     void setTransparent(bool transparent);
+    void releaseGrab();
     void fall(double vx);
     void land(const Ledge& ledge, double impact);
     void refreshLedges(bool force = false);

@@ -19,9 +19,9 @@ SetupWizard::SetupWizard(QWidget* parent) : QWizard(parent)
     resize(640, 560);
     setMinimumSize(480, 420);
     setWizardStyle(QWizard::ModernStyle);
-    setOption(QWizard::NoBackButtonOnStartPage, true);
     setContentsMargins(12, 8, 12, 12);
-    setOptions(QWizard::NoCancelButton | QWizard::IndependentPages | QWizard::HaveCustomButton1);
+    // One call: setOptions() replaces the whole set, so a separate setOption() before it is lost.
+    setOptions(QWizard::NoCancelButton | QWizard::IndependentPages | QWizard::HaveCustomButton1 | QWizard::NoBackButtonOnStartPage);
 
     retranslate();
 

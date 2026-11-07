@@ -728,7 +728,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         // Language
         // EMC: start in the system language (falls back to English if there is no translation),
         // so first run does not open on a 60-row language table. Changeable in Settings.
-        m_settings->registerSetting("Language", QLocale::system().name());
+        // Left empty so the translations index picks the system locale, or its bare language ("de" for de_DE),
+        // once it loads; a "de_DE" default matches nothing in the index and ends up English.
+        m_settings->registerSetting("Language", QString());
         m_settings->registerSetting("UseSystemLocale", false);
 
         // Console
@@ -1297,7 +1299,8 @@ bool Application::createSetupWizard()
     }();
     bool askjava = BuildConfig.JAVA_DOWNLOADER_ENABLED && !javaRequired && !settings()->get("AutomaticJavaDownload").toBool() &&
                    !settings()->get("AutomaticJavaSwitch").toBool() && !settings()->get("UserAskedAboutAutomaticJavaDownload").toBool();
-    bool languageRequired = settings()->get("Language").toString().isEmpty();
+    // EMC skips the language page: an empty Language follows the system language (see the setting above).
+    bool languageRequired = false;
     bool pasteInterventionRequired = settings()->get("PastebinURL") != "";
     bool validWidgets = m_themeManager->isValidApplicationTheme(settings()->get("ApplicationTheme").toString());
     bool validIcons = m_themeManager->isValidIconTheme(settings()->get("IconTheme").toString());
@@ -1394,6 +1397,8 @@ bool Application::event(QEvent* event)
 void Application::performMainStartupAction()
 {
     m_status = Application::Initialized;
+    // Servers set to start with EMC come up now, window or not (also when started with --launch or --show).
+    m_servers->startAutoStartServers();
     if (!m_instanceIdToLaunch.isEmpty()) {
         auto* inst = instances()->getInstanceById(m_instanceIdToLaunch);
         if (inst) {
@@ -1433,9 +1438,8 @@ void Application::performMainStartupAction()
             return;
         }
     }
-    // Servers set to start with EMC come up now, window or not.
-    m_servers->startAutoStartServers();
-    if (m_startInTray && m_serverTray && QSystemTrayIcon::isSystemTrayAvailable()) {
+    // An import needs the window, so links or files to import skip starting in the tray.
+    if (m_startInTray && m_urlsToImport.isEmpty() && m_serverTray && QSystemTrayIcon::isSystemTrayAvailable()) {
         m_serverTray->enterBackground(false);
         qDebug() << "<> Started in the tray.";
     } else if (!m_mainWindow) {
@@ -1468,6 +1472,8 @@ void Application::performMainStartupAction()
 
     if (!m_urlsToImport.isEmpty()) {
         qDebug() << "<> Importing from url:" << m_urlsToImport;
+        if (!m_mainWindow)
+            showMainWindow(false);
         m_mainWindow->processURLs(m_urlsToImport);
     }
 }
@@ -1817,6 +1823,17 @@ InstanceWindow* Application::showInstanceWindow(MinecraftInstance* instance, con
         extras.controller->setParentWidget(window);
     }
     return window;
+}
+
+void Application::trackWindow(QWidget* window)
+{
+    m_openWindows++;
+    connect(window, &QObject::destroyed, this, [this] {
+        m_openWindows--;
+        if (shouldExitNow()) {
+            exit(0);
+        }
+    });
 }
 
 void Application::on_windowClose()

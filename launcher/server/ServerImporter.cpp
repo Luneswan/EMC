@@ -112,7 +112,11 @@ bool ServerImporter::readRunScript(const QString& dir, QStringList* args)
             parts.removeAll("%*");
             parts.removeAll("$@");
             parts.removeAll("nogui");
-            if (!parts.isEmpty()) {
+            // EMC sets the memory itself; a later -Xmx would win over it.
+            parts.removeIf([](const QString& p) { return p.startsWith("-Xmx") || p.startsWith("-Xms"); });
+            // Only the installer's script: a hand-written `java -jar forge-....jar` is started from the jar instead.
+            static const QRegularExpression argsFile("^@libraries/.+/(win|unix)_args\\.txt$");
+            if (!parts.filter(argsFile).isEmpty()) {
                 *args = parts;
                 return true;
             }
@@ -150,6 +154,10 @@ ServerScan ServerImporter::scan(const QString& dirPath)
     if (QFileInfo::exists(dir.filePath("bedrock_server.exe")) || QFileInfo::exists(dir.filePath("bedrock_server"))) {
         s.software = "bedrock";
         s.launchType = "exe";
+        if (!ServerSoftware::bedrockSupported()) {
+            s.problem = QObject::tr("Mojang makes the Bedrock server only for Windows and for Linux on Intel/AMD computers.");
+            return s;  // not valid
+        }
         // This computer's build of the server; a folder copied from another system needs it re-downloaded.
         s.launchTarget = ServerSoftware::bedrockExecutable();
         if (!QFileInfo::exists(dir.filePath(s.launchTarget))) {

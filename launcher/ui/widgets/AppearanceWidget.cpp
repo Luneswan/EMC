@@ -60,15 +60,15 @@ AppearanceWidget::AppearanceWidget(bool themesOnly, QWidget* parent)
     // EMC has no background pictures: only the walking cat's on/off switch is shown.
     m_ui->catSettingsBox->hide();
     m_ui->catPreview->hide();
+    // No cat packs are ever loaded, so the pack picker and its folder button would stay empty.
+    m_ui->catPackLabel->hide();
+    m_ui->catPackComboBox->hide();
+    m_ui->catPackFolder->hide();
     m_ui->enableCatCheckBox->setText(tr("Show the cat"));
 
     if (themesOnly) {
-        m_ui->catPackLabel->hide();
-        m_ui->catPackComboBox->hide();
-        m_ui->catPackFolder->hide();
         m_ui->settingsBox->hide();
         m_ui->consolePreview->hide();
-        m_ui->catPreview->hide();
         loadThemeSettings();
     } else {
         loadSettings();

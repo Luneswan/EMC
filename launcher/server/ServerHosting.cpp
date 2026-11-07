@@ -12,6 +12,7 @@
 #include <QCoreApplication>
 #include <QNetworkReply>
 #include <QPointer>
+#include <QSet>
 #include <QUrlQuery>
 
 #include "Application.h"
@@ -37,6 +38,10 @@ QList<Forward> forwards(const ServerInstance* server)
     }
     return list;
 }
+
+// Forwards this run added on the router. Only these are removed again: a failed add (error 718)
+// means the port belongs to another device, and deleting it would cut that device off.
+QSet<QPair<int, QString>> added;
 
 // Points the server's free name.duckdns.org at the router's internet address.
 void updateDuckDns(ServerInstance* server, const QString& ip)
@@ -82,6 +87,7 @@ void open(ServerInstance* server, const QString& mode)
                                        return;
                                    }
                                    if (error.isEmpty()) {
+                                       added.insert({ forward.port, forward.protocol });
                                        guard->logLine(QObject::tr("Router: port %1 (%2) is forwarded to this computer.")
                                                           .arg(forward.port)
                                                           .arg(forward.protocol));
@@ -136,6 +142,9 @@ void close(ServerInstance* server, const QString& mode)
 {
     if (mode == "upnp") {
         for (const auto& forward : forwards(server)) {
+            if (!added.remove({ forward.port, forward.protocol })) {
+                continue;
+            }
             PortMapper::instance()->removeMapping(forward.port, forward.protocol, [](const QString&) {});
         }
     } else if (mode == "playit" && PlayitAgent::supported()) {
@@ -157,7 +166,10 @@ void ServerHosting::statusChanged(ServerInstance* server, ServerInstance::Status
 
 void ServerHosting::modeChanged(ServerInstance* server, const QString& oldMode)
 {
-    if (!server->isActive()) {
+    // A server still preparing opens hosting itself when it reaches Starting, with the new mode.
+    using Status = ServerInstance::Status;
+    const auto status = server->status();
+    if (status != Status::Starting && status != Status::Running && status != Status::Stopping) {
         return;
     }
     close(server, oldMode);

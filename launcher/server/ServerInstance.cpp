@@ -28,6 +28,11 @@
 #include "launch/LogModel.h"
 #include "settings/INISettingsObject.h"
 
+namespace {
+// Stop waits this long for the server to save and exit; any output it prints restarts the wait.
+constexpr int StopTimeoutMs = 2 * 60 * 1000;
+}  // namespace
+
 ServerInstance::ServerInstance(QString id, QString metaDir, QObject* parent)
     : QObject(parent), m_id(std::move(id)), m_metaDir(std::move(metaDir)), m_log(new LogModel(this))
 {
@@ -264,7 +269,8 @@ void ServerInstance::appendLauncherLine(const QString& line, MessageLevel level)
 
 void ServerInstance::start()
 {
-    if (isActive()) {
+    // ServerList::stopAll sets "emcQuitting": a pending restart must not start the server while EMC quits.
+    if (isActive() || property("emcQuitting").toBool()) {
         return;
     }
     m_lastError.clear();
@@ -276,6 +282,12 @@ void ServerInstance::start()
         return;
     }
     if (isBedrock()) {
+        if (!ServerSoftware::bedrockSupported()) {
+            m_lastError = tr("Mojang makes the Bedrock server only for Windows and for Linux on Intel/AMD computers.");
+            appendLauncherLine(m_lastError, MessageLevel::Error);
+            setStatus(Status::Crashed);
+            return;
+        }
         launchProcess({});
         return;
     }
@@ -295,11 +307,14 @@ void ServerInstance::start()
     appendLauncherLine(tr("Downloading Java %1 for this server...").arg(m_settings->get("JavaMajor").toInt()));
     auto task = makeShared<ServerJavaTask>(javaName, m_settings->get("JavaMajor").toInt());
     m_prepare = task;
-    connect(task.get(), &Task::succeeded, this, [this, task] {
+    // A raw pointer: capturing the shared pointer in the task's own connection would keep it alive forever.
+    auto* javaTask = task.get();
+    connect(javaTask, &Task::succeeded, this, [this, javaTask] {
+        const QString java = javaTask->javaPath();
         m_prepare.reset();
-        launchProcess(task->javaPath());
+        launchProcess(java);
     });
-    connect(task.get(), &Task::failed, this, [this](const QString& reason) {
+    connect(javaTask, &Task::failed, this, [this](const QString& reason) {
         m_prepare.reset();
         m_lastError = reason;
         appendLauncherLine(tr("Could not get Java: %1").arg(reason), MessageLevel::Error);
@@ -503,14 +518,15 @@ void ServerInstance::launchProcess(const QString& java)
             appendLauncherLine(tr("Checking plugins and mods for updates..."));
             auto task = makeShared<ModrinthServerUpdateTask>(folders, mcVersion());
             m_prepare = task;
-            connect(task.get(), &Task::finished, this, [this, task, java] {
-                m_prepare.reset();
-                const auto updated = task->updated();
+            auto* updateTask = task.get();  // raw: see the Java task above
+            connect(updateTask, &Task::finished, this, [this, updateTask, java] {
+                const auto updated = updateTask->updated();
                 if (!updated.isEmpty()) {
                     appendLauncherLine(tr("Updated: %1").arg(updated.join(", ")));
-                } else if (!task->wasSuccessful()) {
-                    appendLauncherLine(tr("Could not check for updates: %1").arg(task->failReason()), MessageLevel::Warning);
+                } else if (!updateTask->wasSuccessful()) {
+                    appendLauncherLine(tr("Could not check for updates: %1").arg(updateTask->failReason()), MessageLevel::Warning);
                 }
+                m_prepare.reset();
                 if (m_status == Status::Preparing) {
                     launchProcess(java);
                 } else {
@@ -585,6 +601,9 @@ void ServerInstance::onLog(const QStringList& lines, MessageLevel level)
             lineLevel = MessageLevel::Info;
         }
         m_log->append(lineLevel, line);
+        if (m_status == Status::Stopping && m_killTimer.isActive()) {
+            m_killTimer.start(StopTimeoutMs);  // still loading or saving: give it more time
+        }
         if (line.contains("FAILED TO BIND TO PORT")) {
             m_lastError = tr("Another program is using this server's port. Change the port in Settings, or close that program.");
         }
@@ -663,7 +682,8 @@ void ServerInstance::onProcessState(LoggedProcess::State state)
                         }
                     });
                 } else {
-                    appendLauncherLine(tr("The server crashed 3 times in 10 minutes; not restarting it again."), MessageLevel::Warning);
+                    appendLauncherLine(tr("The server crashed %1 times in 10 minutes; not restarting it again.").arg(m_recentCrashes.size()),
+                                       MessageLevel::Warning);
                 }
             }
             break;
@@ -693,7 +713,7 @@ void ServerInstance::stop()
     setStatus(Status::Stopping);
     appendLauncherLine(tr("Stopping the server (saving the world)..."));
     m_process->write("stop\n");
-    m_killTimer.start(60 * 1000);
+    m_killTimer.start(StopTimeoutMs);
 }
 
 void ServerInstance::restart()
@@ -704,6 +724,11 @@ void ServerInstance::restart()
     }
     m_restartAfterStop = true;
     stop();
+    if (!isActive()) {
+        // It was still preparing, so no process exit will trigger the restart: start again now.
+        m_restartAfterStop = false;
+        QTimer::singleShot(0, this, &ServerInstance::start);
+    }
 }
 
 void ServerInstance::kill()

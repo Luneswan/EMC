@@ -27,9 +27,21 @@ const char* kLatestRelease = "https://api.github.com/repos/Luneswan/EMC/releases
 // EMC can look often and only asks the API for the downloads once a newer version is out.
 const char* kLatestPage = "https://github.com/Luneswan/EMC/releases/latest";
 constexpr int kFirstCheckMs = 3 * 1000;
-constexpr int kRecheckMs = 60 * 1000;
+constexpr int kRecheckMs = 2 * 60 * 1000;
 constexpr qint64 kFocusCheckMs = 30 * 1000;  // coming back to EMC looks again, at most this often
 constexpr qint64 kApiFallbackMs = 60 * 60 * 1000;
+// A version whose lookup or download failed (no asset yet, bad checksum, disk full) is tried again after an hour,
+// then after twice as long each time, so it doesn't cost an API call and ~45 MB every check.
+constexpr qint64 kRetryFirstMs = 60 * 60 * 1000;
+constexpr qint64 kRetryMaxMs = 24 * 60 * 60 * 1000;
+
+// There is one updater per EMC, so the retry state can live here.
+struct RetryState {
+    QString version;
+    QElapsedTimer since;
+    qint64 waitMs = 0;
+};
+RetryState g_retry;
 
 QString shellQuote(QString s)
 {
@@ -49,12 +61,17 @@ EmcUpdater::EmcUpdater(QNetworkAccessManager* network, const QString& workDir, Q
         m_assetName = "EMC-Setup.exe";
     }
 #elif defined(Q_OS_MACOS)
-    if (appDir.endsWith(".app/Contents/MacOS")) {
+    // A copy run from the DMG or from App Translocation can't be replaced; it gets the download page.
+    const QString bundle = QDir(appDir + "/../..").canonicalPath();
+    if (appDir.endsWith(".app/Contents/MacOS") && !bundle.contains("/AppTranslocation/") &&
+        QFileInfo(QFileInfo(bundle).absolutePath()).isWritable()) {
         m_kind = Kind::MacApp;
         m_assetName = "EMC-macOS.dmg";
     }
 #elif defined(Q_OS_LINUX)
-    if (!qEnvironmentVariable("APPIMAGE").isEmpty()) {
+    // The new AppImage is moved over the old one, so its folder has to be writable.
+    const QString appImage = qEnvironmentVariable("APPIMAGE");
+    if (!appImage.isEmpty() && QFileInfo(QFileInfo(appImage).absolutePath()).isWritable()) {
         m_kind = Kind::AppImage;
         const bool arm = QSysInfo::currentCpuArchitecture().startsWith("arm");
         m_assetName = arm ? "EMC-Linux-aarch64.AppImage" : "EMC-Linux-x86_64.AppImage";
@@ -116,6 +133,12 @@ void EmcUpdater::checkNow()
         // A download page already offered for this version needs no second look.
         if (m_kind == Kind::Manual && tag == m_latestVersion)
             return;
+        // Each try at the same version waits longer; a success stops the checks (or offers the page) on its own.
+        if (g_retry.version == tag && g_retry.since.isValid() && g_retry.since.elapsed() < g_retry.waitMs)
+            return;
+        g_retry.waitMs = g_retry.version == tag ? qMin(g_retry.waitMs * 2, kRetryMaxMs) : kRetryFirstMs;
+        g_retry.version = tag;
+        g_retry.since.start();
         qInfo() << "Newer EMC release seen:" << tag;
         fetchRelease();
     });
@@ -273,9 +296,10 @@ bool EmcUpdater::launchInstall(bool relaunch)
             // A running AppImage can be renamed over on Linux; the new file takes its place for the next start.
             const QString appImage = qEnvironmentVariable("APPIMAGE");
             // Start the new one only once this EMC has exited, or it would just hand over to the closing copy.
-            const QString script = QString("while kill -0 %1 2>/dev/null; do sleep 0.5; done; mv -f %2 %3 && chmod +x %3 %4")
+            // The relaunch runs even if the move failed, so the old copy opens again instead of nothing.
+            const QString script = QString("while kill -0 %1 2>/dev/null; do sleep 0.5; done; mv -f %2 %3 && chmod +x %3; %4")
                                        .arg(QString::number(QCoreApplication::applicationPid()), shellQuote(m_readyFile),
-                                            shellQuote(appImage), relaunch ? "&& exec " + shellQuote(appImage) : QString());
+                                            shellQuote(appImage), relaunch ? "exec " + shellQuote(appImage) : QString());
             started = QProcess::startDetached("/bin/sh", { "-c", script });
             break;
         }

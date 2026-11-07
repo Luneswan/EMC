@@ -26,6 +26,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -38,6 +39,7 @@
 #include <QVBoxLayout>
 
 #include "Application.h"
+#include "FileSystem.h"
 #include "Markdown.h"
 #include "server/ServerContent.h"
 #include "server/ServerInstance.h"
@@ -227,6 +229,10 @@ ServerContentPage::ServerContentPage(ServerInstance* server, bool mods, QWidget*
     connect(static_cast<ProjectItemDelegate*>(m_installed->itemDelegate()), &ProjectItemDelegate::checkboxClicked, this,
             [this](const QModelIndex& index) {
                 auto* item = m_installed->item(index.row());
+                // Message rows ("No plugins yet…") have no checkbox to toggle.
+                if (!item || !(item->flags() & Qt::ItemIsUserCheckable) || item->data(kFileRole).toString().isEmpty()) {
+                    return;
+                }
                 item->setCheckState(item->checkState() == Qt::Checked ? Qt::Unchecked : Qt::Checked);
             });
     connect(m_installed, &QListWidget::itemChanged, this, [this](QListWidgetItem* item) {
@@ -334,6 +340,8 @@ void ServerContentPage::refreshInstalled()
                                         : tr("No plugins yet. Find some in Browse, or drop .jar files here."));
     }
     m_tabs->setTabText(0, files.isEmpty() ? tr("Installed") : tr("Installed (%1)").arg(files.size()));
+    // The blocker above hides the selection change, so update Remove by hand.
+    m_remove->setEnabled(!m_installed->selectedItems().isEmpty());
     identifyInstalled();
 }
 
@@ -436,6 +444,7 @@ void ServerContentPage::addFiles(const QStringList& files)
     }
     QDir().mkpath(folder());
     int added = 0;
+    QStringList failed;
     for (const auto& file : files) {
         if (!file.endsWith(".jar", Qt::CaseInsensitive)) {
             continue;
@@ -447,24 +456,67 @@ void ServerContentPage::addFiles(const QStringList& files)
         }
         // Copy first, and replace the old file only once the copy is complete.
         const QString part = target + ".part";
+        const QString old = target + ".old";
         QFile::remove(part);
-        if (QFile::copy(file, part)) {
-            QFile::remove(target);
-            added += QFile::rename(part, target) ? 1 : 0;
+        bool ok = QFile::copy(file, part);
+        if (ok) {
+            // Move the old jar aside rather than deleting it, so it can be put back if the swap fails.
+            // On Windows a running server keeps its jars locked, which makes this fail.
+            const bool hadOld = QFileInfo::exists(target);
+            QFile::remove(old);
+            if (hadOld && !QFile::rename(target, old)) {
+                ok = false;
+            } else if (QFile::rename(part, target)) {
+                QFile::remove(old);
+            } else {
+                ok = false;
+                if (hadOld) {
+                    QFile::rename(old, target);
+                }
+            }
         }
         QFile::remove(part);
+        if (ok) {
+            ++added;
+        } else {
+            failed << QFileInfo(file).fileName();
+        }
     }
     refreshInstalled();
-    setNote(added == 0 ? tr("Only .jar files can be added.")
-                       : (m_server && m_server->isActive() ? tr("Added %1. Restart the server to load it.").arg(added)
-                                                            : tr("Added %1.").arg(added)));
+    if (!failed.isEmpty()) {
+        setNote(tr("Could not replace %1. Stop the server first.").arg(failed.join(", ")));
+    } else if (added == 0) {
+        setNote(tr("Only .jar files can be added."));
+    } else {
+        setNote(m_server && m_server->isActive() ? tr("Added %1. Restart the server to load it.").arg(added) : tr("Added %1.").arg(added));
+    }
 }
 
 void ServerContentPage::removeSelected()
 {
-    int removed = 0;
+    QStringList paths;
+    QStringList names;
     for (auto* item : m_installed->selectedItems()) {
-        removed += QFile::remove(item->data(kFileRole).toString()) ? 1 : 0;
+        const QString path = item->data(kFileRole).toString();
+        if (!path.isEmpty()) {
+            paths << path;
+            names << QFileInfo(path).fileName();
+        }
+    }
+    if (paths.isEmpty()) {
+        m_remove->setEnabled(false);
+        return;
+    }
+    const QString question = paths.size() == 1 ? tr("Remove %1?").arg(names.first())
+                                               : tr("Remove these %1 files?\n\n%2").arg(paths.size()).arg(names.join('\n'));
+    if (QMessageBox::question(this, tr("Confirm Removal"), question, QMessageBox::Yes | QMessageBox::No, QMessageBox::No) !=
+        QMessageBox::Yes) {
+        return;
+    }
+    int removed = 0;
+    for (const auto& path : paths) {
+        // The trash keeps a mistaken removal recoverable; delete only where there is no trash.
+        removed += (FS::trash(path) || QFile::remove(path)) ? 1 : 0;
     }
     refreshInstalled();
     setNote(removed == 0 ? tr("Could not remove the file. Stop the server first.")
@@ -720,6 +772,13 @@ void ServerContentPage::toggleChosen(QListWidgetItem* item)
         m_chosen.remove(project);
         m_chosenTitles.remove(project);
     } else {
+        // Same rule as the Select button: an installed project would be downloaded next to its old jar,
+        // and a project with no version for this server has nothing to install.
+        const QVariant versions = item->data(kVersionsRole);
+        if (item->data(UserDataTypes::INSTALLED).toBool() || (versions.isValid() && versions.toList().isEmpty())) {
+            item->setCheckState(Qt::Unchecked);
+            return;
+        }
         // Before the versions have loaded the newest compatible one is used.
         const QVariant version = m_results->currentItem() == item ? m_versions->currentData() : QVariant();
         m_chosen.insert(project, version.isValid() ? version.toString() : QString());

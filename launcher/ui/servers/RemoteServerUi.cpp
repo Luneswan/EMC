@@ -79,9 +79,32 @@ void openPanel(const RemoteServer* server)
     QDesktopServices::openUrl(QUrl(url));
 }
 
+// The Minecraft version from the last ping. Proxies report a range like "Velocity 1.7.2-1.21.4", so the last
+// version wins, and year-based releases like 26.1 count too.
+QString pingedVersion(const RemoteServer* server)
+{
+    static const QRegularExpression version(R"((?<![\d.])(\d+)\.\d+(?:\.\d+)?(?!\d))");
+    QString found;
+    auto it = version.globalMatch(server->status().version);
+    while (it.hasNext()) {
+        const auto match = it.next();
+        const int major = match.captured(1).toInt();
+        if (major == 1 || major >= 26) {
+            found = match.captured(0);
+        }
+    }
+    return found;
+}
+
 void play(RemoteServer* server, QWidget* parent)
 {
-    ServerJoin::join(parent, server->name(), server->isBedrock(), server->host(), server->port(), server->mcVersion());
+    ServerJoin::join(parent, server->name(), server->isBedrock(), server->host(), server->port(), pingedVersion(server));
+}
+
+// What the RCON session depends on; when any of it changes the console reconnects.
+QString rconKey(const RemoteServer* server)
+{
+    return QString("%1|%2|%3|%4").arg(server->host(), QString::number(server->rconPort()), server->rconPassword(), QString::number(server->isBedrock() ? 1 : 0));
 }
 
 QHash<RemoteServer*, QPointer<RemoteServerWindow>>& windows()
@@ -260,7 +283,8 @@ RemoteServerWindow::RemoteServerWindow(RemoteServer* server) : QDialog(nullptr),
     m_address = new QLabel(this);
     m_address->setTextInteractionFlags(Qt::TextSelectableByMouse);
     QFont mono = m_address->font();
-    mono.setFamily("Consolas");
+    mono.setFamilies({ "Consolas", "Menlo", "DejaVu Sans Mono" });
+    mono.setStyleHint(QFont::Monospace);
     mono.setPixelSize(14);
     m_address->setFont(mono);
     auto* copy = new QPushButton(tr("Copy"), this);
@@ -278,7 +302,11 @@ RemoteServerWindow::RemoteServerWindow(RemoteServer* server) : QDialog(nullptr),
     root->addWidget(m_consoleNote);
     m_console = new QPlainTextEdit(this);
     m_console->setReadOnly(true);
-    m_console->setFont(QFont("Consolas", 10));
+    QFont consoleFont;
+    consoleFont.setFamilies({ "Consolas", "Menlo", "DejaVu Sans Mono" });
+    consoleFont.setStyleHint(QFont::Monospace);
+    consoleFont.setPointSize(10);
+    m_console->setFont(consoleFont);
     root->addWidget(m_console, 1);
     m_command = new QLineEdit(this);
     m_command->setPlaceholderText(tr("Type a command, like list or say hello"));
@@ -306,10 +334,8 @@ RemoteServerWindow::RemoteServerWindow(RemoteServer* server) : QDialog(nullptr),
         if (!m_server) {
             return;
         }
-        RemoteServerDialog dialog(m_server, this);
-        if (dialog.exec() == QDialog::Accepted) {
-            connectRcon();
-        }
+        // Saving emits changed(), which reconnects RCON when needed.
+        RemoteServerDialog(m_server, this).exec();
     });
     connect(remove, &QPushButton::clicked, this, [this] { RemoteServers::remove(m_server, this); });
     connect(m_panel, &QPushButton::clicked, this, [this] {
@@ -345,6 +371,13 @@ RemoteServerWindow::RemoteServerWindow(RemoteServer* server) : QDialog(nullptr),
     });
     connect(server, &RemoteServer::statusChanged, this, &RemoteServerWindow::refresh);
     connect(server, &RemoteServer::changed, this, &RemoteServerWindow::refresh);
+    // Edits from the card's menu land here too, so reconnect whenever the RCON details change.
+    connect(server, &RemoteServer::changed, this, [this, key = rconKey(server)]() mutable {
+        if (m_server && rconKey(m_server) != key) {
+            key = rconKey(m_server);
+            connectRcon();
+        }
+    });
 
     // Keep the status fresh while the window is open.
     auto* timer = new QTimer(this);
@@ -491,8 +524,8 @@ void RemoteServerCard::refresh()
     m_dot->setStyleSheet(QString("background: %1; border-radius: 5px;").arg(dotColor(m_server)));
     m_name->setText(m_server->name());
     QStringList parts{ m_server->isBedrock() ? tr("Hosted · Bedrock") : tr("Hosted · Java"), m_server->address() };
-    if (!m_server->mcVersion().isEmpty()) {
-        parts << m_server->mcVersion();
+    if (!pingedVersion(m_server).isEmpty()) {
+        parts << pingedVersion(m_server);
     }
     m_detail->setText(parts.join("  ·  "));
     m_status->setText(statusLine(m_server));

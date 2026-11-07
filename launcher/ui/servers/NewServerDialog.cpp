@@ -459,6 +459,8 @@ void NewServerDialog::loadVersions()
     };
 
     if (m_versionCache.contains(id)) {
+        // A lookup for another type may still be running; forget it so its result cannot replace this list.
+        m_loadingFor.clear();
         fill(m_versionCache.value(id));
         return;
     }
@@ -472,14 +474,14 @@ void NewServerDialog::loadVersions()
     auto* task = new ServerVersionListTask(id, this);
     connect(task, &Task::succeeded, this, [this, task, id, fill] {
         m_versionCache.insert(id, task->versions());
-        if (m_loadingFor == id) {
+        if (m_loadingFor == id && software() == id) {
             m_loadingFor.clear();
             fill(task->versions());
         }
         task->deleteLater();
     });
     connect(task, &Task::failed, this, [this, task, id](QString reason) {
-        if (m_loadingFor == id) {
+        if (m_loadingFor == id && software() == id) {
             m_loadingFor.clear();
             m_versionNote->setText(tr("Could not load versions: %1. Check your internet connection and go back and forward to "
                                       "try again.")
@@ -494,6 +496,12 @@ void NewServerDialog::loadVersions()
 void NewServerDialog::refreshExtras()
 {
     const QString id = software();
+    m_manualBox->setVisible(!m_autoOptimize->isChecked());
+    // Coming back to this step for the same server type keeps the user's memory, player limit and add-on choices.
+    if (m_starterBox->property("extrasFor").toString() == id) {
+        return;
+    }
+    m_starterBox->setProperty("extrasFor", id);
     const auto* info = ServerSoftware::find(id);
     const bool bedrock = id == "bedrock";
     const bool mods = info && info->mods;
@@ -505,7 +513,6 @@ void NewServerDialog::refreshExtras()
     }
     m_maxPlayers->setValue(plan.maxPlayers);
     m_memory->setEnabled(!bedrock);
-    m_manualBox->setVisible(!m_autoOptimize->isChecked());
 
     // Starter content for this server type; recommended items are ticked.
     m_starterChecks.clear();

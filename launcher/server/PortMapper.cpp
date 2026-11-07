@@ -13,6 +13,7 @@
 #include <QNetworkDatagram>
 #include <QNetworkProxy>
 #include <QNetworkReply>
+#include <QSet>
 #include <QTimer>
 #include <QUdpSocket>
 #include <QXmlStreamReader>
@@ -39,6 +40,9 @@ QString upnpError(const QString& code, const QString& description)
     }
     return description.isEmpty() ? QObject::tr("The router answered with error %1.").arg(code) : description;
 }
+
+// This computer's home-network address when the cached router was found.
+QString discoveredLan;
 }  // namespace
 
 PortMapper* PortMapper::instance()
@@ -57,8 +61,14 @@ PortMapper::PortMapper(QObject* parent) : QObject(parent)
 void PortMapper::discover(std::function<void(bool)> done)
 {
     if (hasRouter()) {
-        done(true);
-        return;
+        if (ServerNetwork::lanAddress() == discoveredLan) {
+            done(true);
+            return;
+        }
+        // This computer moved to another network, so the cached router is not the one here.
+        m_control.clear();
+        m_service.clear();
+        m_routerName.clear();
     }
     m_waiting << std::move(done);
     if (m_waiting.size() > 1) {
@@ -75,6 +85,7 @@ void PortMapper::discover(std::function<void(bool)> done)
     // address so the question leaves through Wi-Fi or Ethernet, not a VPN adapter.
     auto* socket = new QUdpSocket(this);
     const QString lan = ServerNetwork::lanAddress();
+    discoveredLan = lan;
     if (!socket->bind(lan.isEmpty() ? QHostAddress(QHostAddress::AnyIPv4) : QHostAddress(lan), 0)) {
         socket->deleteLater();
         finish(false);
@@ -87,29 +98,69 @@ void PortMapper::discover(std::function<void(bool)> done)
                                        .toUtf8();
         socket->writeDatagram(request, QHostAddress("239.255.255.250"), 1900);
     }
+    // Every device that answers is tried in turn: the first one is not always the router (a mesh
+    // satellite or a range extender may answer too).
+    struct Search {
+        QList<QUrl> queue;
+        QSet<QString> seen;
+        bool fetching = false;
+        bool closed = false;  // the 3 s answer window is over
+        bool over = false;    // finish() was called
+    };
+    auto search = std::make_shared<Search>();
+    auto next = std::make_shared<std::function<void()>>();
+    std::weak_ptr<std::function<void()>> weakNext = next;
+    *next = [this, search, finish, weakNext] {
+        if (search->over) {
+            return;
+        }
+        if (search->queue.isEmpty()) {
+            search->fetching = false;
+            if (search->closed) {
+                search->over = true;
+                finish(false);
+            }
+            return;
+        }
+        search->fetching = true;
+        fetchDescription(search->queue.takeFirst(), [search, finish, self = weakNext.lock()](bool found) {
+            if (found) {
+                search->over = true;
+                finish(true);
+            } else if (self) {
+                (*self)();
+            }
+        });
+    };
     auto* timeout = new QTimer(socket);
     timeout->setSingleShot(true);
-    auto handled = std::make_shared<bool>(false);
-    connect(timeout, &QTimer::timeout, this, [socket, finish, handled] {
-        if (!*handled) {
-            *handled = true;
+    connect(timeout, &QTimer::timeout, this, [socket, finish, search] {
+        search->closed = true;
+        if (!search->fetching && !search->over) {
+            search->over = true;
             finish(false);
         }
         socket->deleteLater();
     });
-    connect(socket, &QUdpSocket::readyRead, this, [this, socket, finish, handled] {
+    connect(socket, &QUdpSocket::readyRead, this, [socket, search, next] {
         while (socket->hasPendingDatagrams()) {
             const QString reply = QString::fromUtf8(socket->receiveDatagram().data());
-            if (*handled) {
+            if (search->over) {
                 continue;
             }
             for (const auto& line : reply.split("\r\n")) {
                 if (line.startsWith("location:", Qt::CaseInsensitive)) {
-                    *handled = true;
-                    fetchDescription(QUrl(line.mid(9).trimmed()), finish);
+                    const QString location = line.mid(9).trimmed();
+                    if (!search->seen.contains(location)) {
+                        search->seen.insert(location);
+                        search->queue.append(QUrl(location));
+                    }
                     break;
                 }
             }
+        }
+        if (!search->fetching && !search->over && !search->queue.isEmpty()) {
+            (*next)();
         }
     });
     timeout->start(3000);
@@ -169,7 +220,9 @@ void PortMapper::soap(const QString& action,
                       const QList<QPair<QString, QString>>& args,
                       std::function<void(QMap<QString, QString>, QString)> done)
 {
-    discover([this, action, args, done](bool found) {
+    // Only a cached router is worth looking for again; a fresh search has just found it.
+    const bool cached = hasRouter();
+    discover([this, action, args, done, cached](bool found) {
         if (!found) {
             done({}, tr("No router with UPnP was found on this network."));
             return;
@@ -188,7 +241,8 @@ void PortMapper::soap(const QString& action,
         request.setHeader(QNetworkRequest::ContentTypeHeader, "text/xml; charset=\"utf-8\"");
         request.setRawHeader("SOAPAction", QString("\"%1#%2\"").arg(m_service, action).toUtf8());
         auto* reply = m_network.post(request, envelope);
-        connect(reply, &QNetworkReply::finished, this, [reply, done] {
+        const QUrl control = m_control;
+        connect(reply, &QNetworkReply::finished, this, [this, reply, action, args, done, cached, control] {
             reply->deleteLater();
             // A SOAP fault arrives as HTTP 500 with a body, so read the body either way.
             QMap<QString, QString> values;
@@ -204,6 +258,14 @@ void PortMapper::soap(const QString& action,
             }
             if (values.contains("errorCode")) {
                 done(values, upnpError(values.value("errorCode"), values.value("errorDescription")));
+            } else if (cached && !reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).isValid()) {
+                // No HTTP answer at all: the router may have restarted on another port. Find it again once.
+                if (m_control == control) {
+                    m_control.clear();
+                    m_service.clear();
+                    m_routerName.clear();
+                }
+                soap(action, args, done);
             } else if (reply->error() != QNetworkReply::NoError) {
                 done(values, tr("The router did not answer: %1").arg(reply->errorString()));
             } else {

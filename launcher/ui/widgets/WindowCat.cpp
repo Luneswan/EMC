@@ -54,6 +54,24 @@ bool chance(int percent)
 {
     return QRandomGenerator::global()->bounded(100) < percent;
 }
+
+// The clickable widget under the cat at a global point (a button, a tab, the instance list), or null.
+QWidget* clickableUnder(QWidget* cat, QPoint global)
+{
+    const bool wasTransparent = cat->testAttribute(Qt::WA_TransparentForMouseEvents);
+    cat->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    QWidget* under = QApplication::widgetAt(global);
+    cat->setAttribute(Qt::WA_TransparentForMouseEvents, wasTransparent);
+    if (!under || under == cat) {
+        return nullptr;
+    }
+    const bool listViewport = qobject_cast<QAbstractScrollArea*>(under->parentWidget()) &&
+                              static_cast<QAbstractScrollArea*>(under->parentWidget())->viewport() == under;
+    if (qobject_cast<QAbstractButton*>(under) || (under->focusPolicy() & Qt::ClickFocus) || listViewport) {
+        return under;
+    }
+    return nullptr;
+}
 }  // namespace
 
 QVector<WindowCat::Coat> WindowCat::coats()
@@ -101,8 +119,10 @@ void WindowCat::setLedgeProvider(LedgeProvider provider)
 
 void WindowCat::setActive(bool active)
 {
+    const bool wasActive = m_active;
     m_active = active;
     if (!active) {
+        releaseGrab();
         savePosition();
         m_timer.stop();
         hide();
@@ -110,10 +130,33 @@ void WindowCat::setActive(bool active)
     }
     show();
     raise();
-    m_clock.restart();
-    m_lastMs = 0;
+    // The clock runs for the cat's whole life, so stored timestamps (Zzz, pats, ledges) stay comparable.
+    if (!m_clock.isValid()) {
+        m_clock.start();
+    }
+    m_lastMs = m_clock.elapsed();
+    if (wasActive && m_placed) {
+        // Already out: keep it where it is instead of dropping it in again.
+        if (!m_timer.isActive()) {
+            m_timer.start(kFrameMs);
+        }
+        return;
+    }
     m_placed = false;  // placed on the first tick, once the window has a real size
     m_timer.start(kFrameMs);
+}
+
+void WindowCat::releaseGrab()
+{
+    // A release that never arrived (a menu or another window took the mouse) must not leave the cat stuck to the cursor.
+    m_pressed = false;
+    m_dragging = false;
+    if (m_state == State::Held) {
+        m_vel = QPointF(0, 0);
+        m_spin = m_swing * m_facing;
+        m_leaping = false;
+        setState(State::Air);
+    }
 }
 
 // ---------------------------------------------------------------- geometry
@@ -154,8 +197,15 @@ void WindowCat::refreshLedges(bool force)
             }
         }
     }
-    // The bottom of the window is always solid.
-    m_ledges.push_back({ 0, double(parentWidget()->width()), double(parentWidget()->height()) - 1 });
+    // The floor is always the last ledge: the lowest full-width surface (the status bar), else the bottom of the window.
+    const double w = parentWidget()->width();
+    double floorY = -1;
+    for (const auto& l : m_ledges) {
+        if (l.x1 <= 0 && l.x2 >= w - 1 && l.y > floorY) {
+            floorY = l.y;
+        }
+    }
+    m_ledges.push_back({ 0, w, floorY >= 0 ? floorY : double(parentWidget()->height()) - 1 });
 }
 
 std::optional<WindowCat::Ledge> WindowCat::ledgeUnderFeet(double tolerance) const
@@ -205,6 +255,7 @@ void WindowCat::dropIn()
     m_vel = QPointF(0, 0);
     m_spin = m_facing * 60;  // arrive tumbling, then right itself
     m_leaping = false;
+    m_pouncing = false;
     setState(State::Air);
     move(m_pos.toPoint());
 }
@@ -215,6 +266,8 @@ void WindowCat::step(double dt)
     m_stateTime += dt;
     if (m_state != State::Held) {
         m_idleTime += dt;
+    } else if (!(QApplication::mouseButtons() & Qt::LeftButton)) {
+        releaseGrab();  // the button came up somewhere the cat never heard about
     }
     refreshLedges();
 
@@ -339,7 +392,7 @@ void WindowCat::stepGrounded(double dt)
             } else if (nearEdge) {
                 if (m_edgeChoice == 0) {
                     // Most of the time a cat peers over the edge and turns back; sometimes it steps off.
-                    m_edgeChoice = ledge->y >= parentWidget()->height() - 2 || chance(60) ? 1 : 2;
+                    m_edgeChoice = ledge->y >= m_ledges.last().y - 2 || chance(60) ? 1 : 2;
                 }
                 if (m_edgeChoice == 1) {
                     m_facing = -m_facing;
@@ -489,8 +542,8 @@ void WindowCat::stepAir(double dt)
     }
     if (hit) {
         land(*hit, m_vel.y());
-    } else if (m_pos.y() > maxY()) {
-        land({ 0, double(parentWidget()->width()), double(parentWidget()->height()) - 1 }, m_vel.y());
+    } else if (const Ledge ground = m_ledges.last(); after.y() > ground.y || m_pos.y() > maxY()) {
+        land(ground, m_vel.y());  // dropped or thrown below the floor: it ends up on it
     }
 }
 
@@ -606,6 +659,7 @@ void WindowCat::fall(double vx)
 {
     m_vel = QPointF(vx, 0);
     m_leaping = false;
+    m_pouncing = false;
     m_spin = 0;
     setState(State::Air);
 }
@@ -699,6 +753,9 @@ void WindowCat::setState(State state)
             break;
     }
     setCursor(state == State::Held ? Qt::ClosedHandCursor : Qt::OpenHandCursor);
+    if (state != State::Air) {
+        m_pouncing = false;  // a pounce ends with any landing or grab, caught or not
+    }
     setTransparent(state == State::Hang || (state == State::Air && m_pouncing));
 }
 
@@ -804,6 +861,9 @@ bool WindowCat::eventFilter(QObject* watched, QEvent* event)
             }
         });
     }
+    if (watched == window() && event->type() == QEvent::WindowDeactivate) {
+        releaseGrab();
+    }
     if (watched == parentWidget() && event->type() == QEvent::Resize) {
         m_pos.rx() = qBound(0.0, m_pos.x(), maxX());
         m_pos.ry() = qBound(0.0, m_pos.y(), maxY());
@@ -832,6 +892,11 @@ void WindowCat::mousePressEvent(QMouseEvent* event)
 void WindowCat::mouseMoveEvent(QMouseEvent* event)
 {
     if (!m_pressed) {
+        return;
+    }
+    if (!(event->buttons() & Qt::LeftButton)) {
+        // Mouse tracking is on: a plain hover after a lost release must not pick the cat up.
+        releaseGrab();
         return;
     }
     const QPoint global = event->globalPosition().toPoint();
@@ -882,14 +947,8 @@ void WindowCat::mouseReleaseEvent(QMouseEvent* event)
     if (!m_dragging) {
         // The cat sits on buttons and tabs: a click on it still reaches what is underneath.
         const QPoint global = event->globalPosition().toPoint();
-        const bool wasTransparent = testAttribute(Qt::WA_TransparentForMouseEvents);
-        setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        QPointer<QWidget> under = QApplication::widgetAt(global);
-        setAttribute(Qt::WA_TransparentForMouseEvents, wasTransparent);
-        const bool listViewport = under && qobject_cast<QAbstractScrollArea*>(under->parentWidget()) &&
-                                  static_cast<QAbstractScrollArea*>(under->parentWidget())->viewport() == under;
-        if (under && under != this &&
-            (qobject_cast<QAbstractButton*>(under) || (under->focusPolicy() & Qt::ClickFocus) || listViewport)) {
+        QPointer<QWidget> under = clickableUnder(this, global);
+        if (under) {
             const QPointF local = under->mapFromGlobal(QPointF(global));
             // A second pat in quick succession is a double-click on what is underneath (opens an instance).
             const qint64 now = m_clock.elapsed();
@@ -929,6 +988,17 @@ void WindowCat::mouseDoubleClickEvent(QMouseEvent* event)
     if (event->button() != Qt::LeftButton || m_state == State::Held || m_state == State::Air) {
         return;
     }
+    const QPoint global = event->globalPosition().toPoint();
+    if (clickableUnder(this, global)) {
+        // Over something clickable: let the release pass the double-click through (opens an instance).
+        m_pressed = true;
+        m_dragging = false;
+        m_pressGlobal = global;
+        m_samples.clear();
+        m_lastPatMs = m_clock.elapsed();
+        event->accept();
+        return;
+    }
     wake();
     if (!tryLeap()) {
         m_vel = QPointF(m_facing * 80, -640);
@@ -940,6 +1010,7 @@ void WindowCat::mouseDoubleClickEvent(QMouseEvent* event)
 
 void WindowCat::contextMenuEvent(QContextMenuEvent* event)
 {
+    releaseGrab();  // the menu takes the mouse, so the left release would never reach the cat
     QMenu menu(this);
     const bool grounded = m_state != State::Air && m_state != State::Held && m_state != State::Hang;
     auto* pet = menu.addAction(tr("Pet"), this, [this] {
@@ -963,7 +1034,7 @@ void WindowCat::contextMenuEvent(QContextMenuEvent* event)
         fall(m_facing * 60);
         m_ledgesAt = -100000;
     });
-    floor->setEnabled(grounded && feet().y() < parentWidget()->height() - 4);
+    floor->setEnabled(grounded && !m_ledges.isEmpty() && feet().y() < m_ledges.last().y - 4);  // nothing below the floor
     auto* coatMenu = menu.addMenu(tr("Coat"));
     const QString current = m_coat.id;
     for (const auto& c : coats()) {

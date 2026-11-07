@@ -205,6 +205,9 @@ class Application : public QApplication {
 
     static QUrl normalizeImportUrl(const QString& url);
 
+    // Keeps EMC running while this window is open, like the main and instance windows.
+    void trackWindow(QWidget* window);
+
    signals:
     void updateAllowedChanged(bool status);
     void globalSettingsAboutToOpen();

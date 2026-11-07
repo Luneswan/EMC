@@ -587,6 +587,8 @@ void MainWindow::retranslateUi()
         if (action->toolTip().contains("%1"))
             action->setToolTip(action->toolTip().arg(BuildConfig.LAUNCHER_DISPLAYNAME));
     }
+
+    fitMainToolBar();
 }
 
 void MainWindow::setupUpdateButton()
@@ -620,15 +622,19 @@ void MainWindow::setupUpdateButton()
         m_userCheckedUpdates = true;
         updater->checkNow();
     });
-    connect(updater, &EmcUpdater::checked, this, [this, checkButton, checkReset](const QString& newest, bool newer) {
+    connect(updater, &EmcUpdater::checked, this, [this, updater, checkButton, checkReset](const QString& newest, bool newer) {
         checkReset->start(1500);
         if (!m_userCheckedUpdates)
             return;
         m_userCheckedUpdates = false;
         if (newest.isEmpty())
             statusBar()->showMessage(tr("Couldn't reach GitHub to check for updates. Try again in a moment."), 6000);
-        else if (newer)
+        // Only a copy that can update itself downloads; the others (and a version that failed to download) get the page.
+        else if (newer && updater->kind() != EmcUpdater::Kind::Manual &&
+                 !(updater->isAvailable() && updater->latestVersion() == newest))
             statusBar()->showMessage(tr("EMC %1 is out. Getting it now…").arg(newest), 6000);
+        else if (newer)
+            statusBar()->showMessage(tr("EMC %1 is out. Use the button at the top to get it.").arg(newest), 6000);
         else
             statusBar()->showMessage(tr("EMC is up to date (%1).").arg(BuildConfig.versionString()), 6000);
         checkButton->setToolTip(newer ? tr("EMC %1 is out").arg(newest) : tr("EMC is up to date"));
@@ -1120,7 +1126,8 @@ void MainWindow::setCatBackground(bool enabled)
             return ledges;
         });
     }
-    m_pet->setActive(enabled);
+    // The cat stays off the Servers page whoever turns it on (settings, appearance, the cat action).
+    m_pet->setActive(enabled && !(m_mainStack && m_mainStack->currentIndex() == 1));
 }
 
 void MainWindow::updateCatState()
@@ -1747,9 +1754,18 @@ void MainWindow::on_actionManageSkins_triggered()
     auto account = APPLICATION->accounts()->defaultAccount();
 
     if (account && account->isSkinServerAccount()) {
-        // Skins on Ely.by and other skin servers are changed on their website.
-        QDesktopServices::openUrl(
-            QUrl(account->accountData()->serverName() == "Ely.by" ? QString("https://ely.by/skins") : account->accountData()->yggdrasilServer));
+        // Skins on Ely.by and other skin servers are changed on their website. yggdrasilServer is the API root
+        // (it answers with JSON), so other servers get their site's front page instead.
+        const QString server = account->accountData()->serverName();
+        QUrl page;
+        if (server == "Ely.by")
+            page = QUrl("https://ely.by/skins");
+        else if (server == "LittleSkin")
+            page = QUrl("https://littleskin.cn/user/closet");
+        else
+            page = QUrl(account->accountData()->yggdrasilServer)
+                       .adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment | QUrl::RemoveUserInfo);
+        QDesktopServices::openUrl(page);
         return;
     }
     if (account && account->accountType() == AccountType::Offline) {

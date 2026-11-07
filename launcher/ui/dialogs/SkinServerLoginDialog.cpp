@@ -174,6 +174,20 @@ SkinServerLoginDialog::SkinServerLoginDialog(QWidget* parent) : QDialog(parent)
     connect(m_password, &QLineEdit::textChanged, this, &SkinServerLoginDialog::updateButtons);
     connect(m_code, &QLineEdit::textChanged, this, &SkinServerLoginDialog::updateButtons);
     connect(m_cancel, &QPushButton::clicked, this, &QDialog::reject);
+    // Cancel or Esc while busy: stop the sign-in before the account it writes to is freed with this dialog.
+    connect(this, &QDialog::rejected, this, [this] {
+        if (m_task) {
+            m_task->disconnect(this);
+            m_task->abort();
+            m_task.reset();
+        }
+        if (m_probe) {
+            m_probe->disconnect(this);
+            m_probe->abort();
+            m_probe->deleteLater();
+            m_probe = nullptr;
+        }
+    });
     connect(m_signIn, &QPushButton::clicked, this, &SkinServerLoginDialog::signIn);
 
     retitle();

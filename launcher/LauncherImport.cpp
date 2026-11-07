@@ -9,6 +9,7 @@
 
 #include "LauncherImport.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QDirIterator>
@@ -26,6 +27,7 @@
 #include <QStorageInfo>
 #include <QtConcurrent>
 
+#include <atomic>
 #include <optional>
 
 
@@ -45,6 +47,10 @@
 namespace {
 
 const QString ledgerName = "imported-launchers.json";
+
+// Set when EMC quits: the copy stops at the next file, or the closed EMC would stay alive (holding its lock)
+// until gigabytes are copied, since quitting waits for background work.
+std::atomic_bool g_quitting{ false };
 
 // Paths are compared as the system compares them: Windows and (usually) macOS ignore case.
 QString key(const QString& path)
@@ -145,7 +151,7 @@ void copyMissing(const QString& from, const QString& to)
     }
     QDirIterator it(from, QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
     const QDir base(from);
-    while (it.hasNext()) {
+    while (!g_quitting && it.hasNext()) {
         const QString file = it.next();
         const QString target = FS::PathCombine(to, base.relativeFilePath(file));
         if (QFileInfo::exists(target)) {
@@ -447,6 +453,7 @@ bool LauncherImportTask::hasNew(const LauncherImport::Source& source, const QStr
 void LauncherImportTask::executeTask()
 {
     setStatus(tr("Looking at your other launchers"));
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [] { g_quitting = true; });
     const QString instances = emcInstancesDir();
     m_watcher.setFuture(QtConcurrent::run([this, instances] {
         Result result;
@@ -477,6 +484,9 @@ void LauncherImportTask::executeTask()
             }
             const auto groups = readGroups(source.instancesDir);
             for (const auto& dir : fresh) {
+                if (g_quitting) {
+                    break;
+                }
                 const QString id = QFileInfo(dir).fileName();
                 QString targetId = id;
                 for (int n = 1; QFileInfo::exists(FS::PathCombine(instances, targetId)); n++) {
@@ -485,18 +495,19 @@ void LauncherImportTask::executeTask()
                 const QString name = readInstanceName(dir).isEmpty() ? id : readInstanceName(dir);
                 status(tr("Copying %1 from %2").arg(name, source.name));
                 // Copied into a staging folder first, so EMC never lists a half-copied instance, and a
-                // failed copy (disk full, a file the game holds open) is tried again next time.
+                // failed copy (disk full, a file the game holds open) is tried again next time. The staging folder
+                // is inside the instances folder, so the final rename never crosses drives (EMC skips dot folders).
                 const QString target = FS::PathCombine(instances, targetId);
-                const QString staging = FS::PathCombine(m_dataDir, ".import-staging", targetId);
+                const QString staging = FS::PathCombine(instances, ".emc-import-staging", targetId);
                 QDir(staging).removeRecursively();
                 QDirIterator it(dir, QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
                 bool ok = QDir().mkpath(staging);
-                while (ok && it.hasNext()) {
+                while (ok && !g_quitting && it.hasNext()) {
                     const QString file = it.next();
                     const QString to = FS::PathCombine(staging, QDir(dir).relativeFilePath(file));
                     ok = QDir().mkpath(QFileInfo(to).absolutePath()) && QFile::copy(file, to);
                 }
-                ok = ok && QDir().rename(staging, target);
+                ok = ok && !g_quitting && QDir().rename(staging, target);
                 if (!ok) {
                     qWarning() << "Could not copy" << dir << "into EMC; it will be tried again next time";
                     QDir(staging).removeRecursively();

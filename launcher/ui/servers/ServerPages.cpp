@@ -296,6 +296,16 @@ QString restartHint(const ServerInstance* server)
     return server && server->isActive() ? QObject::tr("Saved. Restart the server to use the new settings.") : QObject::tr("Saved.");
 }
 
+// Hosting, Play and the shown addresses all read the port from server.properties, so changing it
+// while the server runs would point them at a port nothing listens on and leave the old router
+// mapping behind. The port can only change while the server is stopped.
+void lockPortWhileActive(QSpinBox* port, const ServerInstance* server)
+{
+    const bool active = server && server->isActive();
+    port->setEnabled(!active);
+    port->setToolTip(active ? QObject::tr("Stop the server to change its port.") : QString());
+}
+
 QString gigabytes(int mib)
 {
     return QObject::tr("%1 GB").arg(mib / 1024.0, 0, 'f', mib % 1024 ? 1 : 0);
@@ -424,6 +434,18 @@ ServerSettingsPage::ServerSettingsPage(ServerInstance* server, QWidget* parent) 
     connect(m_raw, &QPlainTextEdit::textChanged, this, markDirty);
     connect(m_save, &QPushButton::clicked, this, &ServerSettingsPage::save);
     connect(m_rawToggle, &QPushButton::clicked, this, &ServerSettingsPage::toggleRaw);
+    connect(server, &ServerInstance::statusChanged, this, [this] {
+        if (!m_server) {
+            return;
+        }
+        if (m_server->isActive()) {
+            // Drop an unsaved port edit: the server has just started on the saved one.
+            m_loading = true;
+            m_port->setValue(m_server->port());
+            m_loading = false;
+        }
+        lockPortWhileActive(m_port, m_server);
+    });
     load();
 }
 
@@ -469,6 +491,9 @@ void ServerSettingsPage::load()
     m_autoStart->setChecked(m_server->settings()->get("AutoStart").toBool());
     m_restartOnCrash->setChecked(m_server->settings()->get("RestartOnCrash").toBool());
     m_raw->setPlainText(props.toText());
+    // What the raw editor started from, so save() can tell edits apart from changes made elsewhere.
+    m_raw->setProperty("loadedText", props.toText());
+    lockPortWhileActive(m_port, m_server);
     m_save->setEnabled(false);
     m_loading = false;
 }
@@ -482,7 +507,29 @@ void ServerSettingsPage::save()
     props.setUnicodeEscapes(!m_server->isBedrock());
     if (!m_raw->isHidden()) {  // not isVisible: this also runs when the page is not on screen
         // The raw editor wins: it is what the user is looking at.
-        props.parse(m_raw->toPlainText());
+        const QString loaded = m_raw->property("loadedText").toString();
+        ServerProperties current;
+        current.load(m_server->propertiesPath());
+        if (current.toText() == loaded) {
+            props.parse(m_raw->toPlainText());
+        } else {
+            // The file changed since it was loaded (the Performance page saves it too), so only
+            // write the keys the user edited here instead of putting the old values back.
+            ServerProperties before;
+            before.parse(loaded);
+            ServerProperties edited;
+            edited.parse(m_raw->toPlainText());
+            props.load(m_server->propertiesPath());
+            for (const auto& k : edited.keys()) {
+                if (!before.contains(k) || edited.value(k) != before.value(k)) {
+                    props.setValue(k, edited.value(k));
+                }
+            }
+        }
+        if (m_server->isActive()) {
+            // The running server keeps its port until it restarts; see lockPortWhileActive().
+            props.setValue("server-port", m_server->port());
+        }
     } else {
         props.load(m_server->propertiesPath());
         props.setValue(key("motd"), m_motd->text().trimmed());
@@ -537,7 +584,8 @@ void ServerSettingsPage::toggleRaw()
     }
     m_raw->setVisible(showRaw);
     m_form->setVisible(!showRaw);
-    for (auto* box : findChildren<QCheckBox*>()) {
+    // The startup boxes are EMC settings, not in server.properties, so they stay editable.
+    for (auto* box : { m_pvp, m_whitelist, m_offlinePlayers, m_flight, m_commandBlocks, m_cheats }) {
         box->setEnabled(!showRaw);
     }
     m_rawToggle->setText(showRaw ? tr("Back to the Simple View") : tr("Edit All Properties…"));
@@ -715,9 +763,13 @@ void ServerPerformancePage::retune()
     props.setUnicodeEscapes(!m_server->isBedrock());
     props.load(m_server->propertiesPath());
     ServerOptimizer::apply(plan, props, m_server->isBedrock());
-    props.save(m_server->propertiesPath());
+    if (!props.save(m_server->propertiesPath())) {
+        m_saved->setText(tr("Could not save server.properties."));
+        return;
+    }
     m_server->settings()->set("MemoryAuto", true);
     m_server->settings()->set("AikarFlags", true);
+    emit m_server->changed();
     load();
     m_saved->setText(restartHint(m_server));
 }

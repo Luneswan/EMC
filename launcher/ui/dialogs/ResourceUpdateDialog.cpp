@@ -391,7 +391,14 @@ auto ResourceUpdateDialog::ensureMetadata() -> bool
             onMetadataFailed(candidate, shouldTryOthers.find(candidate->internalId()).value(), ModPlatform::ResourceProvider::MODRINTH);
         });
         connect(modrinthTask.get(), &EnsureMetadataTask::failed, this,
-                [this](const QString& reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec(); });
+                [this](const QString& reason) {
+                    // A quiet (automatic) check must not block with a dialog; just log it.
+                    if (m_quiet) {
+                        qWarning() << "Failed to generate metadata:" << reason;
+                        return;
+                    }
+                    CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
+                });
 
         if (modrinthTask->getHashingTask()) {
             seq.addTask(modrinthTask->getHashingTask());
@@ -408,7 +415,14 @@ auto ResourceUpdateDialog::ensureMetadata() -> bool
             onMetadataFailed(candidate, shouldTryOthers.find(candidate->internalId()).value(), ModPlatform::ResourceProvider::FLAME);
         });
         connect(flameTask.get(), &EnsureMetadataTask::failed, this,
-                [this](const QString& reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec(); });
+                [this](const QString& reason) {
+                    // A quiet (automatic) check must not block with a dialog; just log it.
+                    if (m_quiet) {
+                        qWarning() << "Failed to generate metadata:" << reason;
+                        return;
+                    }
+                    CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
+                });
 
         if (flameTask->getHashingTask()) {
             seq.addTask(flameTask->getHashingTask());
@@ -454,7 +468,14 @@ void ResourceUpdateDialog::onMetadataFailed(Resource* resource, bool tryOthers, 
         connect(task.get(), &EnsureMetadataTask::metadataReady, this, [this](Resource* candidate) { onMetadataEnsured(candidate); });
         connect(task.get(), &EnsureMetadataTask::metadataFailed, this, [this](Resource* candidate) { onMetadataFailed(candidate, false); });
         connect(task.get(), &EnsureMetadataTask::failed, this,
-                [this](const QString& reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec(); });
+                [this](const QString& reason) {
+                    // A quiet (automatic) check must not block with a dialog; just log it.
+                    if (m_quiet) {
+                        qWarning() << "Failed to generate metadata:" << reason;
+                        return;
+                    }
+                    CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
+                });
         if (task->getHashingTask()) {
             auto seq = makeShared<SequentialTask>();
             seq->addTask(task->getHashingTask());
