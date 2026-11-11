@@ -264,6 +264,8 @@ set(MINECRAFT_SOURCES
     minecraft/launch/OfflineSkinServer.h
     minecraft/launch/StartOfflineSkinServer.cpp
     minecraft/launch/StartOfflineSkinServer.h
+    minecraft/launch/SkinHint.cpp
+    minecraft/launch/SkinHint.h
     minecraft/launch/EnsureOfflineLibraries.cpp
     minecraft/launch/EnsureOfflineLibraries.h
     minecraft/launch/ModMinecraftJar.cpp

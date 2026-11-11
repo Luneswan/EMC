@@ -2,6 +2,9 @@
 #include "StartOfflineSkinServer.h"
 
 #include "OfflineSkinServer.h"
+#include "SkinHint.h"
+#include "launch/LaunchTask.h"
+#include "minecraft/MinecraftInstance.h"
 
 StartOfflineSkinServer::StartOfflineSkinServer(LaunchTask* parent, AuthSessionPtr session)
     : LaunchStep(parent), m_session(std::move(session))
@@ -46,6 +49,14 @@ void StartOfflineSkinServer::onLookup(const ElySkinLookup::Result& result)
     m_session->yggdrasil_metadata = m_server->metadataBase64();
     m_session->yggdrasil_optional = true;
     m_session->offline_skin_name = result.elyName;
+
+    // Servers only hear the account's own name; tell the ones in this instance's list which skin it wears.
+    if (auto* instance = m_parent ? m_parent->instance() : nullptr) {
+        QString join;
+        if (instance->settings()->get("JoinServerOnLaunch").toBool())
+            join = instance->settings()->get("JoinServerOnLaunchAddress").toString();
+        SkinHint::sendAll(instance, m_session->player_name, result.elyName, join);
+    }
     emitSucceeded();
 }
 
